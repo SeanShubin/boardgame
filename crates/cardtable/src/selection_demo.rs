@@ -22,7 +22,8 @@
 
 use bevy::prelude::*;
 use cardtable_model::{
-    Badge, CardId, Highlight, Lane, Link, Scene, SceneBody, Team, Tile, Tone, Track, TrackItem,
+    Badge, CardId, Highlight, Lane, Link, Outlook, Scene, SceneBody, Team, Tile, Tone, Track,
+    TrackItem,
 };
 
 use crate::{
@@ -84,6 +85,7 @@ fn tile(id: u64, title: &str, team: Team, highlight: Highlight, badge: &str) -> 
         // which is also what earns it a `TileCard` in `draw_scene_tile`, and thus the rect-tracking the
         // flowing connector and the rotating ring both need to find their endpoints.
         tappable: highlight != Highlight::Dim,
+        outlook: Outlook::Unknown,
     }
 }
 
@@ -199,6 +201,7 @@ fn demo_scene() -> Scene {
             },
         ],
         choices: vec![],
+        actions: vec![],
         log_title: String::new(),
         log: vec![],
         legend: vec![],

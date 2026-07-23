@@ -1996,6 +1996,77 @@ fn spawn_choice_row(parent: &mut ChildSpawnerCommands, choices: &[Choice]) {
         });
 }
 
+/// The **decision strip, as cards.** One card per action [`Tile`], sitting just above the log - the same
+/// rules-blind tiles the board draws, so the WHAT beat of a gesture looks and behaves like the WHO and WHOM
+/// beats. Each is tagged [`TileCard`] (so its rect is tracked, it takes the rotating ring when the game
+/// marks it [`Highlight::Targeted`], and a tap routes to `tap_intention`) and bordered by its highlight via
+/// [`tile_look`]. Wider than a board tile because an action carries a sentence of consequence.
+fn spawn_action_strip(parent: &mut ChildSpawnerCommands, actions: &[Tile]) {
+    parent
+        .spawn(Node {
+            flex_direction: FlexDirection::Row,
+            justify_content: JustifyContent::Center,
+            column_gap: Val::Px(10.0),
+            margin: UiRect::top(Val::Px(8.0)),
+            ..default()
+        })
+        .with_children(|row| {
+            for tile in actions {
+                let (bg, border, ink, border_w) = tile_look(tile.highlight, tile.team);
+                let mut card = row.spawn((
+                    Node {
+                        width: Val::Px(190.0),
+                        flex_direction: FlexDirection::Column,
+                        padding: UiRect::all(Val::Px(10.0)),
+                        row_gap: Val::Px(4.0),
+                        border: UiRect::all(Val::Px(border_w)),
+                        border_radius: BorderRadius::all(Val::Px(10.0)),
+                        ..default()
+                    },
+                    BackgroundColor(bg),
+                    BorderColor::all(border),
+                    card_shadow(),
+                ));
+                if tile.tappable {
+                    card.insert(TileCard(tile.card));
+                }
+                card.with_children(|c| {
+                    c.spawn((
+                        Text::new(tile.title.clone()),
+                        TextFont {
+                            font_size: FONT_TITLE,
+                            ..default()
+                        },
+                        TextColor(ink),
+                    ));
+                    for badge in &tile.badges {
+                        c.spawn((
+                            Text::new(badge.text.clone()),
+                            TextFont {
+                                font_size: FONT_BODY,
+                                ..default()
+                            },
+                            TextColor(tone_color(badge.tone)),
+                        ));
+                    }
+                    // Where it leads - a badge, never a bar: the game may know this loses and still let you
+                    // take it (a position can have no un-doomed move, and you cannot learn why it loses if you
+                    // cannot make it).
+                    if let Some((text, colour)) = outlook_badge(tile.outlook) {
+                        c.spawn((
+                            Text::new(text),
+                            TextFont {
+                                font_size: FONT_BADGE,
+                                ..default()
+                            },
+                            TextColor(colour),
+                        ));
+                    }
+                });
+            }
+        });
+}
+
 /// A [`Outlook`] as its badge: the word and the colour. `None` when the game is not saying — the common case
 /// for a game that has no foresight to offer, and for a choice that cannot be taken anyway.
 fn outlook_badge(outlook: Outlook) -> Option<(&'static str, Color)> {
@@ -2258,6 +2329,12 @@ fn draw_scene(commands: &mut Commands, scene: &Scene, affordances: &[String], ca
                     ))
                     .with_children(|panel| {
                         // The log now lives in the sidebar (left); here remain the decision and its controls.
+                        // The decision is drawn as tracked card tiles (they ring, they anchor arrows, they tap
+                        // through `tap_intention`); the older button-rail `choices` path stays for any game
+                        // that still uses it, but the arena speaks in `actions` now.
+                        if !scene.actions.is_empty() {
+                            spawn_action_strip(panel, &scene.actions);
+                        }
                         if !scene.choices.is_empty() {
                             spawn_choice_row(panel, &scene.choices);
                         }
@@ -2694,6 +2771,11 @@ fn animate_target_rings(
                 }
             }
         }
+    }
+    // Action tiles ring too: a live WHAT pick carries the same "select me to advance" invitation as the WHO
+    // heroes and the WHOM targets on the board.
+    for t in &scene.actions {
+        ring(t);
     }
 }
 

@@ -1,0 +1,112 @@
+=== Ashfen Crossing ===
+Combatants (rank / reach / shape):
+   Raider       vanguard   melee  single
+   Marksman     rearguard  ranged single
+   Bastion      vanguard   melee  area
+   Bombardier   rearguard  ranged area
+  *The Swarm    vanguard   melee  single (horde x4)
+  *The Wall 1   vanguard   melee  single
+  *The Wall 2   vanguard   melee  single
+  *The Sniper   rearguard  ranged single
+round 1
+  step 3/8: Skirmish
+      target  Raider -> The Wall 1
+      target  The Swarm -> Raider
+      target  The Wall 1 -> Raider
+      target  The Wall 2 -> Raider
+      bid     Raider: flips 1 tempo at Finesse 2 = 2 reach
+      bid     The Swarm: flips 1 tempo at Finesse 2 x 4 bodies = 8 reach
+      bid     The Wall 1: flips 1 tempo at Finesse 2 = 2 reach
+      bid     The Wall 2: flips 1 tempo at Finesse 2 = 2 reach
+      strike  Raider strikes The Wall 1: pours 1 more tempo, 2 strikes x might 6 = 12 damage
+      strike  The Swarm strikes Raider: 4 bodies x might 3 = 12 damage
+      strike  The Wall 1 strikes Raider: 1 strike x might 1 = 1 damage
+      strike  The Wall 2 strikes Raider: 1 strike x might 1 = 1 damage
+      resolve Raider: flips 6 health at Grit 1 to absorb 6 damage (8 overflow, discarded)
+      resolve The Wall 1: flips 2 health at Grit 6 to absorb 12 damage, 2 health left
+      resolve Raider: downed - no health remaining
+  step 4/8: Crossing
+      move    Bastion: walks into their line, now an Outrider
+  step 5/8: Defensive Volley
+      target  The Sniper -> Bastion
+      bid     The Sniper: flips 1 tempo at Finesse 3 = 3 reach - clears Bastion's top dodge 2 (1 tempo x F2), reacher wins ties
+      strike  The Sniper fires on Bastion: 5 damage (Might 5)
+      resolve Bastion: flips 1 health at Grit 3 to absorb 3 damage (2 overflow, discarded), 2 health left
+  step 6/8: Raid
+      target  Bastion -> The Sniper
+      strike  Bastion sweeps The Sniper: flips 1 tempo, 1 damage (Might 1)
+      resolve The Sniper: flips 1 health at Grit 1 to absorb 1 damage
+      resolve The Sniper: downed - no health remaining
+  step 7/8: Assault
+      target  Marksman -> The Wall 1
+      target  Bombardier -> The Wall 1
+      target  Bombardier -> The Wall 2
+      target  Bombardier -> The Swarm
+      bid     Marksman: flips 1 tempo at Finesse 2 = 2 reach (The Wall 1 has no tempo to dodge)
+      strike  Marksman fires on The Wall 1: pours 1 more tempo, 10 damage (Might 5, 2 strikes)
+      strike  Bombardier salvos on The Wall 1: flips 1 tempo, 3 damage (Might 3)
+      strike  Bombardier salvos on The Wall 2: 3 damage (Might 3)
+      strike  Bombardier salvos on The Swarm: fells the whole pack, 4 bodies (Might 3 >= Grit 1)
+      resolve The Wall 1: flips 2 health at Grit 6 to absorb 12 damage (1 overflow, discarded)
+      resolve The Wall 2: takes 3 damage - under Grit 6, no health flips (discarded)
+      resolve The Swarm: wiped out - no bodies remaining
+      resolve The Wall 1: downed - no health remaining
+round 2
+  step 1/8: Havoc
+      commit  Bastion -> Melee The Wall 2 (4 hp)
+      commit  *The Wall 2 -> Melee Bastion (2 hp)
+  step 2/8: Withdraw
+      commit  Bastion -> Stay loose in their ranks
+  step 3/8: Skirmish - skipped
+  step 4/8: Crossing - skipped
+  step 5/8: Defensive Volley - skipped
+  step 6/8: Raid - skipped
+  step 7/8: Assault
+      commit  Marksman -> Strike The Wall 2 (4 hp)
+      commit  Bombardier -> Strike The Wall 2 (4 hp)
+  step 8/8: Advance - skipped
+  step 1/8: Havoc
+      target  The Wall 2 -> Bastion
+      target  Bastion -> The Wall 2
+      bid     The Wall 2: flips 1 tempo at Finesse 2 = 2 reach - clears Bastion's top dodge 2 (1 tempo x F2), reacher wins ties
+      strike  The Wall 2 strikes Bastion: 1 damage (Might 1)
+      strike  Bastion sweeps The Wall 2: flips 1 tempo, 1 damage (Might 1)
+      resolve Bastion: takes 1 damage - under Grit 3, no health flips (discarded)
+      resolve The Wall 2: takes 1 damage - under Grit 6, no health flips (discarded)
+  step 7/8: Assault
+      target  Marksman -> The Wall 2
+      target  Bombardier -> The Wall 2
+      bid     Marksman: flips 1 tempo at Finesse 2 = 2 reach (The Wall 2 has no tempo to dodge)
+      strike  Marksman fires on The Wall 2: pours 1 more tempo, 10 damage (Might 5, 2 strikes)
+      strike  Bombardier salvos on The Wall 2: flips 1 tempo, 3 damage (Might 3)
+      resolve The Wall 2: flips 2 health at Grit 6 to absorb 12 damage (1 overflow, discarded), 2 health left
+round 3
+  step 1/8: Havoc
+      commit  Bastion -> Melee The Wall 2 (2 hp)
+      commit  *The Wall 2 -> Melee Bastion (2 hp)
+  step 2/8: Withdraw
+      commit  Bastion -> Stay loose in their ranks
+  step 3/8: Skirmish - skipped
+  step 4/8: Crossing - skipped
+  step 5/8: Defensive Volley - skipped
+  step 6/8: Raid - skipped
+  step 7/8: Assault
+      commit  Marksman -> Strike The Wall 2 (2 hp)
+      commit  Bombardier -> Strike The Wall 2 (2 hp)
+  step 1/8: Havoc
+      target  The Wall 2 -> Bastion
+      target  Bastion -> The Wall 2
+      bid     The Wall 2: flips 1 tempo at Finesse 2 = 2 reach - clears Bastion's top dodge 2 (1 tempo x F2), reacher wins ties
+      strike  The Wall 2 strikes Bastion: 1 damage (Might 1)
+      strike  Bastion sweeps The Wall 2: flips 1 tempo, 1 damage (Might 1)
+      resolve Bastion: takes 1 damage - under Grit 3, no health flips (discarded)
+      resolve The Wall 2: takes 1 damage - under Grit 6, no health flips (discarded)
+  step 7/8: Assault
+      target  Marksman -> The Wall 2
+      target  Bombardier -> The Wall 2
+      bid     Marksman: flips 1 tempo at Finesse 2 = 2 reach (The Wall 2 has no tempo to dodge)
+      strike  Marksman fires on The Wall 2: pours 1 more tempo, 10 damage (Might 5, 2 strikes)
+      strike  Bombardier salvos on The Wall 2: flips 1 tempo, 3 damage (Might 3)
+      resolve The Wall 2: flips 2 health at Grit 6 to absorb 12 damage (1 overflow, discarded)
+      resolve The Wall 2: downed - no health remaining
+========== Win ==========

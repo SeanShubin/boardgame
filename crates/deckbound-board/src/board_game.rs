@@ -198,6 +198,11 @@ impl BoardGame for CardTableGame {
     fn tap_intention(&self, board: &Board, card: CardId) -> Option<Intention> {
         // While a fight is up, tapping a combatant edits the staged plan for the current step.
         let arena = crate::arena::find_arena(board)?;
+        // An action tile IS a card: tapping one is taking that choice. Its id reads back to the choice index,
+        // so the WHAT beat flows through the same tap path as selecting a hero or a target - no button rail.
+        if let Some(index) = crate::arena::action_choice_index(board, arena, card) {
+            return Some(Intention::Choose { index });
+        }
         crate::arena::is_combatant(board, arena, card).then_some(Intention::Tap { card })
     }
 
@@ -265,8 +270,10 @@ impl BoardGame for CardTableGame {
                     "doom oracle settled: {ms:.1} ms over {frames} frame(s), {nodes} nodes, {known} positions known"
                 );
             }
-            for (c, o) in scene.choices.iter_mut().zip(outlooks) {
-                c.outlook = o;
+            // The outlooks are index-aligned with `step_choices`, which is the order `build_actions` laid the
+            // action tiles in - so this drops each foresight onto the card it belongs to.
+            for (t, o) in scene.actions.iter_mut().zip(outlooks) {
+                t.outlook = o;
             }
         }
         Some(scene)

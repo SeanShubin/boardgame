@@ -7,8 +7,8 @@
 //! not a multiply sign, `*` not a bullet.
 
 use cardtable_model::{
-    Badge, Board, Highlight, Lane, Link, PileId, Scene, SceneBody, Team, Tile, Tone, Track,
-    TrackItem,
+    Badge, Board, Highlight, Lane, Link, Outlook, PileId, Scene, SceneBody, Team, Tile, Tone,
+    Track, TrackItem,
 };
 use rules::combat::regions::Rank;
 use rules::combat::resolve::{Combatant, Side};
@@ -73,7 +73,9 @@ pub fn scene(board: &Board, _focus: PileId) -> Option<Scene> {
         Vec::new()
     };
 
-    let choices = arena::scene_choices(board, arena);
+    // The decision is drawn as cards (tiles) in the strip, not a button rail: an action tile takes the ring
+    // and can be an arrow endpoint, so the WHAT beat is the same card vocabulary as the WHO and WHOM beats.
+    let actions = build_actions(board, arena);
 
     Some(Scene {
         tracks,
@@ -81,7 +83,8 @@ pub fn scene(board: &Board, _focus: PileId) -> Option<Scene> {
         prompt,
         body: SceneBody::Lanes(lanes),
         links,
-        choices,
+        choices: Vec::new(),
+        actions,
         log_title,
         log,
         legend: stat_legend(),
@@ -352,7 +355,61 @@ fn lane_tile(board: &Board, w: &arena::Wave, maxes: &[u32], i: usize, sel: Highl
         // Only tiles a tap will do something to: an asked party body (select / re-ask), or a legal target of
         // the focused one (the aiming shortcut) - mirrors `arena::handle_tap`.
         tappable: tap_is_live(w, i),
+        // A combatant carries no foresight badge; that is the action tiles' job.
+        outlook: Outlook::Unknown,
     }
+}
+
+/// **The decision, as cards.** The focused body's legal declarations for this wave (the WHAT: a verb / hold /
+/// crossing answer, or - once aiming - the WHOM targets and the way back), each a real [`Tile`] in the strip
+/// above the log rather than a button on a separate rail. Because each is a card it takes the rotating ring
+/// when it is a live pick and routes its tap through `tap_intention` (which reads the action id back to a
+/// choice index) - so the whole WHO -> WHAT -> WHOM gesture is one card vocabulary. The outlook badge is
+/// filled in later, in `board_game::scene`, where the solver runs. Empty when no body is selected (the board
+/// is the menu then - the unordered heroes carry the ring).
+fn build_actions(board: &Board, arena: PileId) -> Vec<Tile> {
+    arena::step_choices(board, arena)
+        .into_iter()
+        .enumerate()
+        .map(|(i, (choice, action))| {
+            let barred = !choice.enabled();
+            let highlight = if barred {
+                Highlight::Dim
+            } else if choice.chosen {
+                // The staged pick reads "decided" - the same settled cue an ordered body wears.
+                Highlight::Settled
+            } else if action == arena::ChoiceAction::CancelAim {
+                // The way out of the gesture is a steady offer, not a ringed "do this next".
+                Highlight::Available
+            } else {
+                // A live pick that advances the gesture wears the ring - the same invitation the WHO heroes
+                // and the WHOM targets carry.
+                Highlight::Targeted
+            };
+            let mut badges = Vec::new();
+            let line = if barred {
+                &choice.why_not
+            } else {
+                &choice.consequence
+            };
+            if !line.is_empty() {
+                badges.push(Badge {
+                    text: line.clone(),
+                    tone: if barred { Tone::Warn } else { Tone::Muted },
+                });
+            }
+            Tile {
+                card: arena::action_card_id(i),
+                title: choice.label.clone(),
+                team: Team::Left,
+                highlight,
+                badges,
+                draggable: false,
+                tappable: !barred,
+                outlook: Outlook::Unknown,
+            }
+        })
+        .collect()
 }
 
 /// Whether tapping unit `i` right now does anything - mirrors `arena::handle_tap`, so what the screen offers
@@ -456,17 +513,21 @@ mod tests {
         };
         assert_eq!(lanes.len(), 3, "one row per rank - wide, not tall");
         assert!(
-            s.choices.is_empty(),
-            "no buttons until a hero is selected - the ringed heroes are the menu"
+            s.actions.is_empty(),
+            "no action cards until a hero is selected - the ringed heroes are the menu"
         );
-        // Select the asked hero: the order buttons appear.
+        // Select the asked hero: the order cards appear.
         let w = crate::arena::wave(&board, arena).unwrap();
         let i = (0..w.units.len()).find(|&i| w.asked[i]).unwrap();
         crate::arena::handle_tap(&mut board, w.cards[i]);
         let s = scene(&board, arena).expect("a fight scene");
         assert!(
-            !s.choices.is_empty(),
-            "the selected hero has its order buttons"
+            !s.actions.is_empty(),
+            "the selected hero has its order cards"
+        );
+        assert!(
+            s.actions.iter().any(|t| t.highlight == Highlight::Targeted),
+            "a live order card carries the ring, like the WHO and WHOM beats"
         );
         assert_eq!(
             s.disabled_controls,

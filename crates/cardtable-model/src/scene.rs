@@ -34,6 +34,13 @@ pub struct Scene {
     /// [`choice_intention`](crate::BoardGame::choice_intention). The renderer draws them and does not know
     /// what any of them *mean*; everything a player needs to choose is in the [`Choice`] itself.
     pub choices: Vec<Choice>,
+    /// The **decision the game is asking for**, drawn as real card **tiles** in the strip above the log —
+    /// the same rules-blind tiles the body uses. Unlike [`choices`](Scene::choices), an action tile carries a
+    /// [`CardId`], so it takes the rotating ring when it is the pending beat, can be an arrow endpoint, and
+    /// routes its tap through `tap_intention` like any tile. This is how a game keeps the whole choose-a-thing
+    /// gesture in one vocabulary (a card) instead of splitting it between cards and a separate button rail.
+    /// Empty = the game is asking nothing here.
+    pub actions: Vec<Tile>,
     /// The log panel's **title** — where the game stands right now (e.g. "Round 1 - Clash - Strike"). The
     /// panel used to be headed "Log", which said nothing: the position had to be read off the sidebar tracks,
     /// and an on-disk copy had to re-state it. Put it here and the file can be a literal transcript of what the
@@ -260,6 +267,9 @@ pub struct Tile {
     pub draggable: bool,
     /// A single tap on this tile is a game action (routed to `tap_intention`).
     pub tappable: bool,
+    /// Where taking this tile **leads** — the game's foresight, drawn as a small badge. Only an action tile
+    /// (in [`Scene::actions`]) carries one; a board combatant leaves it [`Outlook::Unknown`].
+    pub outlook: Outlook,
 }
 
 /// A directed **association** between two cards — "this card relates to that one right now" — that the
@@ -380,6 +390,11 @@ impl Scene {
             }
         }
 
+        // Action tiles are arrow endpoints too, so register their names before the arrows are described.
+        for t in &self.actions {
+            names.insert(t.card, t.title.clone());
+        }
+
         if !self.links.is_empty() {
             out.push_str(
                 "
@@ -403,6 +418,30 @@ impl Scene {
             }
         }
 
+        if !self.actions.is_empty() {
+            out.push_str(
+                "
+    ACTIONS (the decision, as cards - a tap picks one):
+    ",
+            );
+            for (i, t) in self.actions.iter().enumerate() {
+                let outlook = match t.outlook {
+                    Outlook::Winnable => "  [winnable]",
+                    Outlook::Doomed => "  [doomed]",
+                    Outlook::Evaluating => "  [evaluating]",
+                    Outlook::Unknown => "",
+                };
+                let badges: Vec<&str> = t.badges.iter().map(|b| b.text.as_str()).collect();
+                out.push_str(&format!(
+                    "  [{i}] {:<28} {}{outlook}
+             {}
+    ",
+                    t.title,
+                    hl(t.highlight),
+                    badges.join("  |  ")
+                ));
+            }
+        }
         if !self.choices.is_empty() {
             out.push_str(
                 "

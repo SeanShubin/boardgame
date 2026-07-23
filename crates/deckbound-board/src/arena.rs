@@ -948,7 +948,28 @@ pub(crate) enum ChoiceAction {
     CancelAim,
 }
 
-/// The step's strike verb, for the WHAT button and the target buttons.
+/// The synthetic [`CardId`] base for **action tiles**. Real card ids are a small monotonic counter, so a
+/// base this high can never collide: an action tile is a tracked, tappable card (it rings, it can anchor an
+/// arrow), and its id encodes the choice index it stands for.
+pub(crate) const ACTION_CARD_ID_BASE: u64 = 1 << 48;
+
+/// The tile id for the choice at `index`.
+pub(crate) fn action_card_id(index: usize) -> CardId {
+    CardId(ACTION_CARD_ID_BASE + index as u64)
+}
+
+/// If `card` is one of the current wave's action tiles, the choice index it stands for - so a tap on it can
+/// be read back as `Intention::Choose { index }`. Validated against the live choice list so a stale id from a
+/// previous wave means nothing.
+pub fn action_choice_index(board: &Board, arena: PileId, card: CardId) -> Option<usize> {
+    if card.0 < ACTION_CARD_ID_BASE {
+        return None;
+    }
+    let index = (card.0 - ACTION_CARD_ID_BASE) as usize;
+    (index < step_choices(board, arena).len()).then_some(index)
+}
+
+/// The step's strike verb, for the WHAT card and the target cards.
 fn step_verb(step: Step) -> &'static str {
     match step {
         Step::Havoc => "Melee",
@@ -1993,6 +2014,41 @@ mod tests {
         );
         assert!(!w.aiming, "the gesture is done");
     }
+
+    /// The WHAT beat is a **card**: an action tile's synthetic id reads back to the choice index it stands
+    /// for (so a tap on it is `Intention::Choose`), it never collides with a real combatant, and a stale id
+    /// past the current menu means nothing.
+    #[test]
+    fn action_cards_route_taps_to_choices() {
+        let mut board = sample_table();
+        let arena = open_a_fight_at(&mut board, &["Raider"], Some("The Sundered Vault"));
+        // Nothing selected: no action cards, so even index 0 is not live.
+        assert_eq!(action_choice_index(&board, arena, action_card_id(0)), None);
+
+        // Select the asked hero: now the WHAT cards exist.
+        let w = wave(&board, arena).unwrap();
+        let i = (0..w.units.len()).find(|&i| w.asked[i]).unwrap();
+        handle_tap(&mut board, w.cards[i]);
+
+        let n = scene_choices(&board, arena).len();
+        assert!(n >= 2, "the verb and the pass, at least");
+        for k in 0..n {
+            assert_eq!(
+                action_choice_index(&board, arena, action_card_id(k)),
+                Some(k),
+                "action id {k} reads back to choice {k}"
+            );
+        }
+        // One past the menu is not a live action.
+        assert_eq!(action_choice_index(&board, arena, action_card_id(n)), None);
+        // A real combatant is never mistaken for an action card.
+        assert!(
+            action_card_id(0).0 > w.cards[i].0,
+            "synthetic ids sit above real ones"
+        );
+        assert_eq!(action_choice_index(&board, arena, w.cards[i]), None);
+    }
+
     /// Selecting a hero OUT of cursor order still yields real outlooks (the wave is reordered so the choice
     /// is pinned exactly, not stood in for) - it must not blank the verdict row.
     #[test]

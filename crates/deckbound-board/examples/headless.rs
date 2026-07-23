@@ -42,12 +42,15 @@ fn main() {
         };
         let tiles = all_tiles(&scene);
 
-        // A hero being commanded (Active on our side)? Take its first live choice (verb -> target, or hold).
+        // A hero being commanded (Active on our side)? Tap its first live action CARD - the WHAT beat is a
+        // tile now (verb -> target, or hold), taken by the same tap a player would use.
         let has_active = tiles
             .iter()
             .any(|t| t.team == Team::Left && t.highlight == Highlight::Active);
         if has_active {
-            if let Some(intent) = game.choice_intention(&board, first_enabled_choice(&scene)) {
+            if let Some(t) = scene.actions.iter().find(|t| t.tappable)
+                && let Some(intent) = game.tap_intention(&board, t.card)
+            {
                 game.apply(&mut board, &[intent]);
             }
             dump(&game, &board);
@@ -98,15 +101,6 @@ fn all_tiles(scene: &Scene) -> Vec<&Tile> {
         }
     }
     out
-}
-
-/// The index of the first choice that can be taken (enabled), or 0 as a fallback.
-fn first_enabled_choice(scene: &Scene) -> usize {
-    scene
-        .choices
-        .iter()
-        .position(|c| c.why_not.is_empty())
-        .unwrap_or(0)
 }
 
 /// Move each kit's map position from the home cell to `place_label`, returning the place pile.
