@@ -1292,8 +1292,13 @@ pub fn choice_outlooks(
         return vec![Outlook::Unknown; choices.len()];
     };
 
-    // Apply the already-staged orders that come BEFORE the focus in cursor order; stop at the first gap (the
-    // engine cannot skip a declaration, so a candidate past a gap is unanswerable this frame).
+    // Advance the engine (a strict cursor) to the selected body. Bodies before it in cursor order must be
+    // given SOME declaration to step past - foes and any hero you already ordered play what they will; a
+    // hero you have NOT yet ordered plays its default line (`step_policy`). So the outlook reads: "given my
+    // staged orders, and my not-yet-ordered EARLIER heroes on their default line, where does this lead?"
+    // (Undeclared heroes AFTER the selected one are searched freely by the solver - only the earlier ones
+    // are stood in for, because the cursor cannot skip them. Selecting in cursor order makes the read
+    // exact; out of order, it is this honest approximation instead of a blank.)
     let mut base = seated.state;
     loop {
         let Some(i) = base.deciding() else {
@@ -1310,7 +1315,7 @@ pub fn choice_outlooks(
                 Some(Staged::Hold) => StepChoice::Strike(None),
                 Some(Staged::Go) => StepChoice::Move(true),
                 Some(Staged::Stay) => StepChoice::Move(false),
-                None => return vec![Outlook::Unknown; choices.len()],
+                None => step_policy(&base, i),
             }
         };
         base = StepCombat::apply(&base, &c);
@@ -1900,6 +1905,39 @@ mod tests {
         );
         assert!(!w.aiming, "the gesture is done");
     }
+    /// Selecting a hero OUT of cursor order still yields real outlooks - the earlier undeclared hero is
+    /// stood in for by its default line, not left as a blocking gap that blanks the row.
+    #[test]
+    fn out_of_order_selection_still_scores() {
+        use rules::combat::step_game::StepCombat;
+        use rules::core::Solver;
+        let mut board = sample_table();
+        let arena = open_a_fight_at(
+            &mut board,
+            &["Raider", "Marksman", "Bastion", "Bombardier"],
+            Some("Ashfen Crossing"),
+        );
+        // Pick the SECOND asked hero (skip the first in cursor order).
+        let w = wave(&board, arena).unwrap();
+        let asked: Vec<usize> = (0..w.units.len()).filter(|&i| w.asked[i]).collect();
+        assert!(
+            asked.len() >= 2,
+            "the capstone asks several heroes at the front"
+        );
+        handle_tap(&mut board, w.cards[asked[1]]);
+        // Take the verb so the target choices (which carry verdicts) are on offer.
+        let n = scene_choices(&board, arena).len();
+        let _ = n;
+        let mut solver: Solver<StepCombat> = Solver::default();
+        let outlooks = choice_outlooks(&board, arena, &mut solver, 5_000_000);
+        assert!(
+            outlooks
+                .iter()
+                .any(|o| *o != cardtable_model::Outlook::Unknown),
+            "an out-of-order selection must still produce a real verdict, not all-blank"
+        );
+    }
+
     /// Duplicate foes get distinct DISPLAY names, so the tiles and the journal never read two bodies as one -
     /// while the cards keep their catalog title (stat lookup and the bestiary merge are untouched).
     #[test]
