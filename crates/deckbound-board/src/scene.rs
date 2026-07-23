@@ -221,8 +221,11 @@ fn build_lanes(
         });
     }
 
-    // Targeting arrows: confirmed aims only. While aiming, the rings ARE the offer - arrows to every
-    // candidate on top of them read as noise, so the arrow appears when the choice lands.
+    // Targeting arrows. A committed aim is a solid arrow. The body mid-gesture shows its OPTIONS as offered
+    // arrows - one per candidate - so the choices on the cards are also paths on the board; and while it
+    // aims, every other body's committed arrow is muted, so the gesture in progress owns the screen and a
+    // nearby committed arrow can't be mistaken for the aimer's own.
+    let aiming_focus = if w.aiming { w.focus } else { None };
     let mut links = Vec::new();
     for i in 0..w.units.len() {
         if let Some(Staged::Aim(t)) = w.staged[i] {
@@ -231,11 +234,31 @@ fn build_lanes(
                 to: t,
                 confirmed: true,
                 broad: w.units[i].aoe,
+                muted: aiming_focus.is_some_and(|f| f != i),
+            });
+        }
+    }
+    // The aiming body's options, capped so a wide reach never turns the board into a hairball (past the cap
+    // the rings and the action cards still carry the offer).
+    if let Some(f) = aiming_focus
+        && w.targets.len() <= OFFERED_ARROW_CAP
+    {
+        for &t in &w.targets {
+            links.push(Link {
+                from: w.cards[f],
+                to: w.cards[t],
+                confirmed: false,
+                broad: w.units[f].aoe,
+                muted: false,
             });
         }
     }
     (lanes, links)
 }
+
+/// The most candidate arrows worth drawing at once. Past this, the offered arrows would read as a tangle, so
+/// the ringed cards carry the offer instead.
+const OFFERED_ARROW_CAP: usize = 8;
 
 /// The attention state of combatant `i` this wave. A body reads in one of a few states, the same at every
 /// step: **Dim** = nothing is being asked of it; **Available** = it owes an order (or is a legal target);
@@ -265,12 +288,13 @@ fn sel_of(w: &arena::Wave, i: usize) -> Highlight {
             Highlight::Available
         };
     }
-    // A foe: while the focused body is AIMING, its legal targets carry the animated invitation (the
-    // rotating ring - "select me to complete the action"); a confirmed aim reads Active; otherwise foes
-    // stand plain - nothing is being asked about them yet.
+    // A foe: while the focused body is AIMING, its legal targets are LIVE (tappable, lit) but no longer wear
+    // the ring - the offer is now carried by the amber arrow flowing to each of them and by the ringed action
+    // card, so a third ring on the foe itself would just be the same invitation a third time. A confirmed aim
+    // reads Active; otherwise foes stand plain - nothing is being asked about them yet.
     match w.focus {
         Some(f) if w.staged[f] == Some(Staged::Aim(w.cards[i])) => Highlight::Active,
-        Some(_) if w.aiming && w.targets.contains(&i) => Highlight::Targeted,
+        Some(_) if w.aiming && w.targets.contains(&i) => Highlight::Available,
         _ => Highlight::Idle,
     }
 }

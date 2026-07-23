@@ -191,6 +191,7 @@ fn demo_scene() -> Scene {
                 to: CardId(ACTION),
                 confirmed: true,
                 broad: false,
+                muted: false,
             },
             // The proposed reach to the not-yet-chosen target flows amber (not confirmed).
             Link {
@@ -198,6 +199,7 @@ fn demo_scene() -> Scene {
                 to: CardId(TARGET),
                 confirmed: false,
                 broad: false,
+                muted: false,
             },
         ],
         choices: vec![],

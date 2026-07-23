@@ -282,6 +282,10 @@ pub struct Link {
     pub confirmed: bool,
     /// A broad association — the renderer fans the dots into several parallel threads.
     pub broad: bool,
+    /// Draw this one **quiet** (low alpha): a committed arrow that should step back while another association
+    /// is mid-flight, so the one in progress owns the screen and a nearby committed arrow is not mistaken
+    /// for it. The renderer only dims it; what makes it secondary is the game's call.
+    pub muted: bool,
 }
 
 impl Scene {
@@ -408,12 +412,16 @@ impl Scene {
                         .cloned()
                         .unwrap_or_else(|| format!("#{}", c.0))
                 };
+                let tag = match (l.confirmed, l.muted) {
+                    (true, true) => "confirmed, muted",
+                    (true, false) => "confirmed",
+                    (false, _) => "offered",
+                };
                 out.push_str(&format!(
-                    "  {} -> {}  ({})
+                    "  {} -> {}  ({tag})
     ",
                     name(l.from),
                     name(l.to),
-                    if l.confirmed { "confirmed" } else { "offered" }
                 ));
             }
         }

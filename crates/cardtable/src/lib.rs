@@ -30,7 +30,7 @@ use std::collections::HashMap;
 
 use cardtable_model::{
     Arrangement, Board, Card, CardId, CardKind, Choice, DropTarget, Face, Highlight, Lane, Layout,
-    Node as TableNode, Outlook, PileId, Pos, Row, Scene, SceneBody, Size, Team, Tile, Tone,
+    Link, Node as TableNode, Outlook, PileId, Pos, Row, Scene, SceneBody, Size, Team, Tile, Tone,
     Utility,
 };
 
@@ -2674,10 +2674,47 @@ fn animate_target_arrows(
         return; // no modal scene -> no links to draw
     };
     let phase = time.elapsed_secs();
-    for link in &scene.links {
-        if let (Some(a), Some(b)) = (rects.center(link.from), rects.center(link.to)) {
-            spawn_arrow_dots(&mut commands, a, b, link.confirmed, link.broad, phase);
+    // Only links whose endpoints are on screen, then FAN by shared endpoint: arrows that share a source (a
+    // body's several options) or a target (several bodies aiming at one enemy) each leave and land at their
+    // own offset point instead of stacking into one ambiguous line. This is what lets two paths to the same
+    // target read as two paths, and keeps a committed arrow rooted in its own tile.
+    let drawable: Vec<&Link> = scene
+        .links
+        .iter()
+        .filter(|l| rects.center(l.from).is_some() && rects.center(l.to).is_some())
+        .collect();
+    let mut from_group: std::collections::HashMap<CardId, Vec<usize>> =
+        std::collections::HashMap::new();
+    let mut to_group: std::collections::HashMap<CardId, Vec<usize>> =
+        std::collections::HashMap::new();
+    for (i, l) in drawable.iter().enumerate() {
+        from_group.entry(l.from).or_default().push(i);
+        to_group.entry(l.to).or_default().push(i);
+    }
+    for (i, l) in drawable.iter().enumerate() {
+        let (a, b) = (rects.center(l.from).unwrap(), rects.center(l.to).unwrap());
+        let dir = b - a;
+        let len = dir.length();
+        if len < 1.0 {
+            continue;
         }
+        let perp = Vec2::new(-dir.y, dir.x) / len; // sideways to the a->b line
+        let src = &from_group[&l.from];
+        let tgt = &to_group[&l.to];
+        let a2 = a + perp * fan_offset(src.iter().position(|&k| k == i).unwrap(), src.len());
+        let b2 = b + perp * fan_offset(tgt.iter().position(|&k| k == i).unwrap(), tgt.len());
+        spawn_arrow_dots(&mut commands, a2, b2, l.confirmed, l.broad, l.muted, phase);
+    }
+}
+
+/// The sideways offset for the `j`-th of `k` arrows that share an endpoint - spread symmetrically about the
+/// centre so a group of arrows fans out instead of stacking. Zero when an endpoint is unique.
+fn fan_offset(j: usize, k: usize) -> f32 {
+    const SPREAD: f32 = 12.0;
+    if k <= 1 {
+        0.0
+    } else {
+        (j as f32 - (k as f32 - 1.0) / 2.0) * SPREAD
     }
 }
 
@@ -2691,6 +2728,7 @@ fn spawn_arrow_dots(
     b: Vec2,
     confirmed: bool,
     area: bool,
+    muted: bool,
     phase: f32,
 ) {
     let dir = b - a;
@@ -2706,14 +2744,17 @@ fn spawn_arrow_dots(
     let span = (end - start).length();
     let spacing = if confirmed { 11.0 } else { 17.0 };
     let flow = (phase * 42.0).rem_euclid(spacing); // px/sec toward the target
-    let color = if confirmed {
+    let base = if confirmed {
         TARGET_CUE
     } else {
         SELECTABLE_CUE
     };
+    // A muted arrow (a committed aim while another body is mid-gesture) steps back to a faint trace, so the
+    // gesture in progress is the loud thing on the board.
+    let color = if muted { base.with_alpha(0.26) } else { base };
     // A dark rim keeps each dot legible on any background: where its fill matches the card the rim shows,
-    // where the card is dark the bright fill shows.
-    let rim = Color::srgba(0.0, 0.0, 0.0, 0.8);
+    // where the card is dark the bright fill shows. A muted arrow's rim fades with it.
+    let rim = Color::srgba(0.0, 0.0, 0.0, if muted { 0.3 } else { 0.8 });
     // A single strike is one thread; an area strike fans three parallel threads into a broad band.
     let lanes: &[f32] = if area { &[-7.0, 0.0, 7.0] } else { &[0.0] };
     for &off in lanes {
