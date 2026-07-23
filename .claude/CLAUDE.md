@@ -68,6 +68,9 @@ truth for their exact contents):
   *Truncated at the start of each battle.*
 - `physical-cards.log` — the conserved card tree (indented, face up/down) plus
   the transitions between states. *Truncated on launch.*
+- `cardtable-debug.log` — a narrower drag/drop trace: each drag, each drop (cursor
+  position + every row's hover state) and the resulting Active-row state, for
+  debugging drop behaviour specifically. *Truncated on launch.*
 
 The combat **simulator** (`cargo run -p boardgame --example fight`, a separate
 binary from the app) writes its own: `fight-screen.txt` (current screen) and
