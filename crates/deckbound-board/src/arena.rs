@@ -660,33 +660,6 @@ fn log_skipped_before(board: &mut Board, arena: PileId, round: usize, step: Step
     }
 }
 
-// ---- the declaration labels (the commit lines' vocabulary) ---------------------------------------------
-
-/// What a declaration does at this step, in words - the commit line's label, matching the fight simulator's.
-fn describe(step: Step, units: &[Combatant], choice: &StepChoice) -> String {
-    let who = |t: usize| {
-        let u = &units[t];
-        let kind = if u.horde { "bodies" } else { "hp" };
-        format!("{} ({} {kind})", u.name, u.health)
-    };
-    match (step, choice) {
-        (Step::Havoc, StepChoice::Strike(Some(t))) => format!("Melee {}", who(*t)),
-        (Step::Skirmish, StepChoice::Strike(Some(t))) => format!("Skirmish {}", who(*t)),
-        (Step::Volley, StepChoice::Strike(Some(t))) => format!("Volley the crossing {}", who(*t)),
-        (Step::Raid, StepChoice::Strike(Some(t))) => format!("Raid {}", who(*t)),
-        (Step::Advance, StepChoice::Strike(Some(t))) => {
-            format!("Advance on the exposed {}", who(*t))
-        }
-        (_, StepChoice::Strike(Some(t))) => format!("Strike {}", who(*t)),
-        (_, StepChoice::Strike(None)) => "Hold (pass this step)".to_string(),
-        (Step::Withdraw, StepChoice::Move(true)) => "Withdraw to your own line".to_string(),
-        (Step::Withdraw, StepChoice::Move(false)) => "Stay loose in their ranks".to_string(),
-        (Step::Cross, StepChoice::Move(true)) => "Cross into their line".to_string(),
-        (Step::Cross, StepChoice::Move(false)) => "Hold the line (do not cross)".to_string(),
-        (_, StepChoice::Move(go)) => if *go { "Go" } else { "Stay" }.to_string(),
-    }
-}
-
 // ---- opening a fight -----------------------------------------------------------------------------------
 
 /// Open a fight at `place`: build the `[Arena]` with the six ground piles, seat every stationed hero and
@@ -944,7 +917,7 @@ pub fn pending_decision(board: &Board, arena: PileId) -> Option<String> {
     let w = wave(board, arena)?;
     let i = (0..w.units.len()).find(|&i| w.asked[i] && w.staged[i].is_none())?;
     Some(if w.focus == Some(i) && w.aiming {
-        format!("{} is picking a target", w.units[i].name)
+        format!("{} is targeting", w.units[i].name)
     } else {
         format!("{} has no orders", w.units[i].name)
     })
@@ -1057,13 +1030,13 @@ pub(crate) fn step_choices(board: &Board, arena: PileId) -> Vec<(Choice, ChoiceA
             ));
         }
         _ if w.aiming => {
-            // The WHOM: one button per ringed target (the board's rings and these buttons are the same
-            // menu), plus the way back out of the gesture.
+            // The WHOM: one card per ringed target (the board's rings and these cards are the same menu),
+            // plus the way back out of the gesture. The label is just the target's NAME - you are already
+            // targeting, so the verb is implied; the consequence line says what the strike does.
             for &t in &w.targets {
-                let label = describe(w.step, &w.units, &StepChoice::Strike(Some(t)));
                 let text = strike_consequence(&w.units, i, t);
                 out.push((
-                    Choice::new(label, text),
+                    Choice::new(w.units[t].name.clone(), text),
                     ChoiceAction::Stage(Staged::Aim(w.cards[t])),
                 ));
             }
@@ -1983,7 +1956,7 @@ mod tests {
     }
 
     /// **The three-beat gesture: WHO -> WHAT -> WHOM.** The verb button enters targeting (the mid-gesture
-    /// state - Commit still counts the body as owed, phrased as picking a target); while aiming, the legal
+    /// state - Commit still counts the body as owed, phrased as targeting); while aiming, the legal
     /// targets invite completion and a tap on one stages the order; Cancel puts the action back.
     #[test]
     fn the_three_beat_gesture() {
@@ -2019,7 +1992,7 @@ mod tests {
         let w = wave(&board, arena).unwrap();
         assert!(w.aiming, "the gesture is in progress");
         assert!(
-            pending_decision(&board, arena).is_some_and(|m| m.contains("picking a target")),
+            pending_decision(&board, arena).is_some_and(|m| m.contains("targeting")),
             "Commit still counts the body as owed, mid-gesture"
         );
         assert!(!w.targets.is_empty(), "the targets are on offer");

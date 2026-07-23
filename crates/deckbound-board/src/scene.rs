@@ -42,7 +42,7 @@ pub fn scene(board: &Board, _focus: PileId) -> Option<Scene> {
     } else if let Some(f) = w.focus {
         let name = &w.units[f].name;
         if w.aiming {
-            format!("{name}: PICK A TARGET - click a ringed enemy, or one of the cards below.")
+            format!("{name}: TARGETING - click a ringed enemy, or a card below.")
         } else {
             format!("{name}: CHOOSE AN ORDER - one of the cards below.")
         }
@@ -349,7 +349,7 @@ fn lane_tile(board: &Board, w: &arena::Wave, maxes: &[u32], i: usize, sel: Highl
         match sel {
             Highlight::Active => badges.push(Badge {
                 text: if w.aiming {
-                    "* PICKING A TARGET *".to_string()
+                    "* TARGETING *".to_string()
                 } else {
                     "* YOUR ORDERS NOW *".to_string()
                 },
