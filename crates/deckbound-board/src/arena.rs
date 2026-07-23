@@ -971,18 +971,6 @@ pub fn action_choice_index(board: &Board, arena: PileId, card: CardId) -> Option
     (index < step_choices(board, arena).len()).then_some(index)
 }
 
-/// The step's strike verb, for the WHAT card and the target cards.
-fn step_verb(step: Step) -> &'static str {
-    match step {
-        Step::Havoc => "Melee",
-        Step::Skirmish => "Skirmish",
-        Step::Volley => "Volley",
-        Step::Raid => "Raid",
-        Step::Advance => "Advance on",
-        _ => "Strike",
-    }
-}
-
 /// **Every decision on offer right now, as cards** - the focused body's legal declarations for this wave,
 /// each carrying what it does. A tap on the table only says *which* body; the order itself is one of these.
 pub(crate) fn step_choices(board: &Board, arena: PileId) -> Vec<(Choice, ChoiceAction)> {
@@ -1046,20 +1034,26 @@ pub(crate) fn step_choices(board: &Board, arena: PileId) -> Vec<(Choice, ChoiceA
             ));
         }
         _ => {
-            // The WHAT: the step's verb (entering targeting - the ringed targets complete it), or the pass.
-            let verb = step_verb(w.step);
+            // The WHAT: begin the strike (entering targeting - the ringed targets complete it), or hold. The
+            // label is the CHOICE you are making, not the step's name - what you do is the same at every step;
+            // only its object changes (a single striker aims at a target, an area striker at an area).
             let n = w.targets.len();
+            let (article, what) = if w.units[i].aoe {
+                ("an", "area")
+            } else {
+                ("a", "target")
+            };
             out.push((
                 Choice::new(
-                    format!("{verb}..."),
-                    format!("pick a target: {n} in reach - they light up on the board",),
+                    "Strike...",
+                    format!("pick {article} {what}: {n} in reach - they light up on the board"),
                 )
                 .chosen(matches!(w.staged[i], Some(Staged::Aim(_)))),
                 ChoiceAction::BeginAim,
             ));
             out.push((
                 Choice::new(
-                    "Hold (pass this step)",
+                    "Hold",
                     "keep your tempo for a later step - or for the crossing (a line strike bars it)",
                 )
                 .chosen(w.staged[i] == Some(Staged::Hold)),
