@@ -2674,47 +2674,91 @@ fn animate_target_arrows(
         return; // no modal scene -> no links to draw
     };
     let phase = time.elapsed_secs();
-    // Only links whose endpoints are on screen, then FAN by shared endpoint: arrows that share a source (a
-    // body's several options) or a target (several bodies aiming at one enemy) each leave and land at their
-    // own offset point instead of stacking into one ambiguous line. This is what lets two paths to the same
-    // target read as two paths, and keeps a committed arrow rooted in its own tile.
+    // Only links whose endpoints are both on screen.
     let drawable: Vec<&Link> = scene
         .links
         .iter()
-        .filter(|l| rects.center(l.from).is_some() && rects.center(l.to).is_some())
+        .filter(|l| rects.0.contains_key(&l.from) && rects.0.contains_key(&l.to))
         .collect();
-    let mut from_group: std::collections::HashMap<CardId, Vec<usize>> =
-        std::collections::HashMap::new();
-    let mut to_group: std::collections::HashMap<CardId, Vec<usize>> =
-        std::collections::HashMap::new();
-    for (i, l) in drawable.iter().enumerate() {
-        from_group.entry(l.from).or_default().push(i);
-        to_group.entry(l.to).or_default().push(i);
+    if drawable.is_empty() {
+        return;
     }
+    // **Attach each arrow to the box EDGE facing its other end, and space the arrows sharing an edge evenly
+    // along it.** Offsetting from tile centres (the old way) let arrows converging on one enemy pile onto its
+    // centre; attaching to the perimeter and distributing along the edge keeps them apart at BOTH ends, with
+    // the gap between neighbours about the same as the gap to the corners (a lone arrow lands centred).
+    let n = drawable.len();
+    let mut attach_from = vec![Vec2::ZERO; n];
+    let mut attach_to = vec![Vec2::ZERO; n];
+    // Every arrow end that touches a given card: (link index, the OTHER end's centre, is this the `from` end?).
+    let mut ends: std::collections::HashMap<CardId, Vec<(usize, Vec2, bool)>> =
+        std::collections::HashMap::new();
     for (i, l) in drawable.iter().enumerate() {
-        let (a, b) = (rects.center(l.from).unwrap(), rects.center(l.to).unwrap());
-        let dir = b - a;
-        let len = dir.length();
-        if len < 1.0 {
-            continue;
+        // Both are present (filtered above); the other end's centre is where this arrow points from/to.
+        let from_c = rects.center(l.from).unwrap();
+        let to_c = rects.center(l.to).unwrap();
+        ends.entry(l.from).or_default().push((i, to_c, true));
+        ends.entry(l.to).or_default().push((i, from_c, false));
+    }
+    for (card, list) in &ends {
+        let bx = rects.0[card];
+        let center = bx.center();
+        let (hx, hy) = (bx.width().max(1.0) / 2.0, bx.height().max(1.0) / 2.0);
+        // Sort each arrow onto the edge it most faces: 0 left, 1 right, 2 top, 3 bottom.
+        let mut by_edge: [Vec<usize>; 4] = core::array::from_fn(|_| Vec::new());
+        for (slot, &(_, other, _)) in list.iter().enumerate() {
+            let d = other - center;
+            let edge = if (d.x.abs() / hx) >= (d.y.abs() / hy) {
+                if d.x < 0.0 { 0 } else { 1 }
+            } else if d.y < 0.0 {
+                2
+            } else {
+                3
+            };
+            by_edge[edge].push(slot);
         }
-        let perp = Vec2::new(-dir.y, dir.x) / len; // sideways to the a->b line
-        let src = &from_group[&l.from];
-        let tgt = &to_group[&l.to];
-        let a2 = a + perp * fan_offset(src.iter().position(|&k| k == i).unwrap(), src.len());
-        let b2 = b + perp * fan_offset(tgt.iter().position(|&k| k == i).unwrap(), tgt.len());
-        spawn_arrow_dots(&mut commands, a2, b2, l.confirmed, l.broad, l.muted, phase);
+        for (edge, group) in by_edge.iter_mut().enumerate() {
+            if group.is_empty() {
+                continue;
+            }
+            // Order them along the edge by where their other end sits, so neighbouring arrows do not cross.
+            let vertical = edge < 2;
+            group.sort_by(|&a, &b| {
+                let (ka, kb) = if vertical {
+                    (list[a].1.y, list[b].1.y)
+                } else {
+                    (list[a].1.x, list[b].1.x)
+                };
+                ka.partial_cmp(&kb).unwrap_or(std::cmp::Ordering::Equal)
+            });
+            let k = group.len();
+            for (j, &slot) in group.iter().enumerate() {
+                let f = (j as f32 + 1.0) / (k as f32 + 1.0); // equal gaps, incl. to the corners; centred at k=1
+                let p = match edge {
+                    0 => Vec2::new(bx.min.x, bx.min.y + bx.height() * f),
+                    1 => Vec2::new(bx.max.x, bx.min.y + bx.height() * f),
+                    2 => Vec2::new(bx.min.x + bx.width() * f, bx.min.y),
+                    _ => Vec2::new(bx.min.x + bx.width() * f, bx.max.y),
+                };
+                let (link_idx, _, is_from) = list[slot];
+                if is_from {
+                    attach_from[link_idx] = p;
+                } else {
+                    attach_to[link_idx] = p;
+                }
+            }
+        }
     }
-}
-
-/// The sideways offset for the `j`-th of `k` arrows that share an endpoint - spread symmetrically about the
-/// centre so a group of arrows fans out instead of stacking. Zero when an endpoint is unique.
-fn fan_offset(j: usize, k: usize) -> f32 {
-    const SPREAD: f32 = 12.0;
-    if k <= 1 {
-        0.0
-    } else {
-        (j as f32 - (k as f32 - 1.0) / 2.0) * SPREAD
+    for (i, l) in drawable.iter().enumerate() {
+        spawn_arrow_dots(
+            &mut commands,
+            attach_from[i],
+            attach_to[i],
+            l.confirmed,
+            l.broad,
+            l.muted,
+            phase,
+        );
     }
 }
 
@@ -2733,14 +2777,15 @@ fn spawn_arrow_dots(
 ) {
     let dir = b - a;
     let len = dir.length();
-    if len < 72.0 {
-        return; // tiles adjacent/overlapping - nothing useful to draw
+    if len < 40.0 {
+        return; // endpoints adjacent/overlapping - nothing useful to draw
     }
     let unit = dir / len;
     let perp = Vec2::new(-unit.y, unit.x); // sideways - the offset for an area strike's fanned threads
-    // Start clear of the source tile and stop short of the target so the dots read as a gap-spanning arrow.
-    let start = a + unit * 36.0;
-    let end = b - unit * 36.0;
+    // `a` and `b` are on the box perimeters; nudge a little off each edge so the dots read as a gap-spanning
+    // arrow rather than touching the boxes.
+    let start = a + unit * 12.0;
+    let end = b - unit * 12.0;
     let span = (end - start).length();
     let spacing = if confirmed { 11.0 } else { 17.0 };
     let flow = (phase * 42.0).rem_euclid(spacing); // px/sec toward the target
