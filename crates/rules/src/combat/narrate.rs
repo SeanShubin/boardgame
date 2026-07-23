@@ -145,27 +145,13 @@ pub fn narrate(before: &Board, transcript: &[StepLog]) -> Vec<String> {
                         } else {
                             format!("Finesse {f}")
                         };
-                        // The dodge FLOOR the reach had to clear: the TARGET's utmost dodge - its whole tempo x its
-                        // Finesse (no body multiplier, even for a horde). `reach_cards` sizes the bid to meet this,
-                        // and the reacher wins ties - so a connecting bid shows BOTH compared numbers (the reach,
-                        // and the dodge it beat), not just its own reach. This is why the tempo cannot be smaller:
-                        // below the floor the target simply slips the blow, so only tempo ABOVE it can pour.
-                        let tf = before.units[t].finesse.max(1);
-                        let tt = prev_tp[t];
-                        let against = if tt == 0 {
-                            format!(" ({tn} has no tempo to dodge)")
-                        } else {
-                            format!(
-                                " - clears {tn}'s top dodge {} ({tt} tempo x F{tf}), reacher wins ties",
-                                tt * tf
-                            )
-                        };
+                        // Just what the attacker did: the tempo it flipped and the reach that made. The target's
+                        // dodge floor - what it COULD have slipped - is the target's business, not the attacker's
+                        // line, and a bid that connected means the target did not dodge, so it has nothing to say
+                        // here. (The general rule that the reacher wins ties is a rule, not an event.)
                         lines.push((
                             "bid",
-                            format!(
-                                "{an}: flips {rt} tempo at {fclause} = {} reach{against}",
-                                r.bid
-                            ),
+                            format!("{an}: flips {rt} tempo at {fclause} = {} reach", r.bid),
                         ));
                         let pour = total.saturating_sub(rt);
                         if pour > 0 {
@@ -266,22 +252,14 @@ pub fn narrate(before: &Board, transcript: &[StepLog]) -> Vec<String> {
                 continue; // no spend, already struck, or already shown as a reacher in pass 1
             }
             let name = &before.units[i].name;
-            if let Some(worst) = log
-                .reaches
-                .iter()
-                .filter(|r| r.target == i && r.evaded)
-                .map(|r| r.bid)
-                .max()
-            {
-                // The same flow, responding: flip tempo to generate reach that OUTWEIGHS the incoming bid. Both
-                // values on the page (multiply, never divide): "4 reach clears the 2 reaching it".
+            if log.reaches.iter().any(|r| r.target == i && r.evaded) {
+                // Just what the dodger did: flipped tempo to generate the reach that carried the dodge. The
+                // incoming bid it beat is the attacker's number, stated on the attacker's own reach line.
                 let f = before.units[i].finesse.max(1);
                 let dodge = spent * f;
                 lines.push((
                     "bid",
-                    format!(
-                        "{name}: flips {spent} tempo at Finesse {f} to generate {dodge} reach, dodging the {worst} reaching it"
-                    ),
+                    format!("{name}: flips {spent} tempo at Finesse {f} = {dodge} reach, dodges"),
                 ));
             } else {
                 lines.push((
