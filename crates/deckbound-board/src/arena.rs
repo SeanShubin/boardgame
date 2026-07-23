@@ -1978,6 +1978,79 @@ mod tests {
         }
     }
 
+    /// **Outlooks CONDITION on what is staged - inter-hero dependencies are real.** A choice's verdict is
+    /// "given everything staged so far, does SOME completion still win". So staging one hero's order can
+    /// change another hero's outlook set (Q3: a path is winnable/doomed BECAUSE of a different hero's
+    /// choice), and two heroes' badges are only JOINTLY guaranteed once you stage one and let the other
+    /// re-condition. This proves the conditioning is live rather than each hero being scored in isolation.
+    #[test]
+    fn outlooks_condition_on_staged_orders() {
+        use rules::combat::step_game::StepCombat;
+        use rules::core::Solver;
+
+        let outlooks_for =
+            |board: &Board, arena: PileId, hero: usize| -> Vec<cardtable_model::Outlook> {
+                // Select `hero`, then read its choice outlooks (a fresh solver each call - we are testing the
+                // question the badges answer, not memo warmth).
+                let mut b = board.clone();
+                let w = wave(&b, arena).unwrap();
+                for (j, &c) in w.cards.iter().enumerate() {
+                    if w.units[j].side == Side::Party {
+                        edit_flags(&mut b, c, |f| f.active = j == hero);
+                    }
+                }
+                let mut solver: Solver<StepCombat> = Solver::default();
+                choice_outlooks(&b, arena, &mut solver, 20_000_000)
+            };
+
+        // The Hollow Rampart (Raid) is Insight-class - only a real read wins - so hero choices genuinely
+        // depend on one another there.
+        let mut board = sample_table();
+        let arena = open_a_fight_at(
+            &mut board,
+            &["Raider", "Marksman", "Bastion", "Bombardier"],
+            Some("The Hollow Rampart"),
+        );
+        let w = wave(&board, arena).unwrap();
+        let asked: Vec<usize> = (0..w.units.len()).filter(|&i| w.asked[i]).collect();
+        assert!(asked.len() >= 2, "several heroes are asked at the opening");
+        let (a, b_hero) = (asked[0], asked[1]);
+
+        // b_hero's outlooks with A unstaged (marginal - A is free).
+        let marginal = outlooks_for(&board, arena, b_hero);
+
+        // A's legal orders: select A, read its menu.
+        let a_targets = {
+            let mut b = board.clone();
+            for (j, &c) in w.cards.iter().enumerate() {
+                if w.units[j].side == Side::Party {
+                    edit_flags(&mut b, c, |f| f.active = j == a);
+                }
+            }
+            wave(&b, arena).unwrap().targets
+        };
+        // Stage EACH of A's legal orders and see whether b_hero's outlook set ever changes. If it does, the
+        // badges condition on A's choice (the property under test). Across an Insight corner it must.
+        let mut conditioned = false;
+        for staged in a_targets
+            .iter()
+            .map(|&t| Staged::Aim(w.cards[t]))
+            .chain(std::iter::once(Staged::Hold))
+        {
+            let mut staged_board = board.clone();
+            edit_flags(&mut staged_board, w.cards[a], |f| f.staged = Some(staged));
+            let with_a = outlooks_for(&staged_board, arena, b_hero);
+            if with_a != marginal {
+                conditioned = true;
+                break;
+            }
+        }
+        assert!(
+            conditioned,
+            "staging a hero's order must be able to change another hero's outlook - the badges are conditional, not per-hero-in-isolation"
+        );
+    }
+
     /// The journal speaks the canonical log language: wave headers, commit lines, and the minor steps.
     #[test]
     fn the_journal_speaks_the_canonical_format() {
