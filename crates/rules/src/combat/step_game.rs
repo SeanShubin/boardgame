@@ -247,23 +247,47 @@ impl StepState {
         self.order.get(self.next).copied()
     }
 
-    /// **Every** legal strike target for `i` at the current step - no dedup. The player-facing list: the
-    /// screen shows each enemy as its own target so nothing looks mysteriously unpickable; the collapse of
-    /// interchangeable twins is a search optimisation ([`targets`](StepState::targets)), kept behind the seam.
+    /// The strike targets for `i` a **player** picks. A single-target striker sees every reachable enemy as
+    /// its own choice (nothing looks mysteriously unpickable; the interchangeable-twin collapse is a search
+    /// optimisation kept behind the seam in [`targets`](StepState::targets)). An **area** striker instead
+    /// picks a SLICE, not a body: naming any member of the slice is the same strike, so they collapse to one
+    /// representative each - which also keeps the search from branching on identical choices.
     pub fn targets_all(&self, i: usize) -> Vec<usize> {
         let b = &self.board;
-        (0..b.units.len())
+        let reachable: Vec<usize> = (0..b.units.len())
             .filter(|&t| {
                 !b.units[t].fallen && b.units[t].side != b.units[i].side && self.reaches(i, t)
+            })
+            .collect();
+        if !b.units[i].aoe {
+            return reachable;
+        }
+        // The slice an area strike catches is a tier (rank + region) - except the melee sweep at Havoc, which
+        // takes BOTH tiers, so there the slice is the whole region. Two targets in the same slice are the
+        // same strike; keep the lowest-index representative of each.
+        let whole_region = matches!(self.step, Step::Havoc);
+        reachable
+            .iter()
+            .copied()
+            .filter(|&t| {
+                !reachable.iter().any(|&t2| {
+                    t2 < t
+                        && b.regions[t2] == b.regions[t]
+                        && (whole_region || b.ranks[t2] == b.ranks[t])
+                })
             })
             .collect()
     }
 
-    /// The legal strike targets for `i` with the **symmetric-target dedup** (two interchangeable enemies
-    /// collapse to the lowest-index representative, same as the wave model) - the SEARCH menu, where offering
-    /// both twins is wasted branching. The player-facing menu uses [`targets_all`](StepState::targets_all).
+    /// The legal strike targets for `i` for the **search**. For an area striker this is already one per slice
+    /// (see [`targets_all`](StepState::targets_all)); for a single-target striker it adds the symmetric-twin
+    /// dedup (two interchangeable enemies collapse to the lowest-index representative), where offering both is
+    /// wasted branching.
     pub fn targets(&self, i: usize) -> Vec<usize> {
         let candidates = self.targets_all(i);
+        if self.board.units[i].aoe {
+            return candidates; // an area strike already collapsed to one per slice
+        }
         candidates
             .iter()
             .copied()

@@ -473,8 +473,11 @@ fn plan_text(board: &Board, w: &arena::Wave, i: usize) -> String {
 /// The three **constant** stats a fight turns on, compact enough for a tile: **M**ight, **G**rit,
 /// **F**inesse. Vitality and Cadence are already on the tile as the totals of the two pools.
 fn stats_badge(u: &Combatant) -> Badge {
+    // The strike shape rides the stat line so you can tell at a glance whether a body hits ONE target or
+    // sweeps an AREA (a whole enemy slice) - it changes how you read its threat and how you aim it.
+    let shape = if u.aoe { "area" } else { "single" };
     Badge {
-        text: format!("M {}   G {}   F {}", u.might, u.grit, u.finesse),
+        text: format!("M {}   G {}   F {}   {shape}", u.might, u.grit, u.finesse),
         tone: Tone::Muted,
     }
 }
