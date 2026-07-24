@@ -68,6 +68,9 @@ pub enum Intention {
     Unequip { label: CardId },
     /// March the hero map-position `position` to the adjacent place `to`.
     March { position: CardId, to: PileId },
+    /// Seat `hero` on the solo encounter at `place` - commit it as the one hero that fights this lone
+    /// encounter. Swaps out any hero already seated (back to standing on the cell). See [`seat_hero`].
+    Seat { hero: CardId, place: PileId },
     /// Advance the day clock (stand the move-markers back up, lay a new Day Passed).
     AdvanceDay,
     /// Open a v2 fight at the combat-ready `place` (a stationed hero + an encounter).
@@ -100,6 +103,7 @@ impl BoardGame for CardTableGame {
             match *intention {
                 Intention::Unequip { label } => unequip(board, label),
                 Intention::March { position, to } => march(board, position, to),
+                Intention::Seat { hero, place } => seat_hero(board, hero, place),
                 Intention::AdvanceDay => advance_day(board),
                 Intention::Fight { place } => {
                     crate::arena::open_fight(board, place);
@@ -140,9 +144,24 @@ impl BoardGame for CardTableGame {
         onto: DropTarget,
     ) -> Option<Intention> {
         match onto {
-            // Dropping a card onto another card means nothing: the only rule that used it was the Inn's
-            // equip pairing (a hero identity onto a kit), and the Inn is gone.
-            DropTarget::Card(_) => None,
+            // Drag a hero standing at a cell onto that cell's **solo encounter** card to SEAT it - commit it
+            // as the one hero that fights this lone encounter. (The only other card-onto-card rule was the
+            // Inn's equip pairing, and the Inn is gone.)
+            DropTarget::Card(onto) => {
+                let is = |c: CardId, t: &str| board.card(c).map(|k| k.card_type()) == Some(t);
+                if is(dragged, "hero")
+                    && is(onto, "encounter")
+                    && let Some(place) = board.card(onto).map(|c| c.home())
+                    && is_solo_cell(board, place)
+                    && board.content_cards(place).contains(&dragged)
+                {
+                    return Some(Intention::Seat {
+                        hero: dragged,
+                        place,
+                    });
+                }
+                None
+            }
             DropTarget::Pile(dest) => {
                 // In the arena, a hero dropped onto the ground pile its move would land in stages the move
                 // (Cross / Withdraw) - position is EARNED, so the card walks at resolution, not at the drop.
@@ -185,7 +204,10 @@ impl BoardGame for CardTableGame {
     fn is_checkpoint(&self, intention: &Intention) -> bool {
         !matches!(
             intention,
-            Intention::Assign { .. } | Intention::Tap { .. } | Intention::Choose { .. }
+            Intention::Assign { .. }
+                | Intention::Tap { .. }
+                | Intention::Choose { .. }
+                | Intention::Seat { .. }
         )
     }
 
@@ -338,31 +360,48 @@ fn unequip(board: &mut Board, label: CardId) {
 }
 
 fn march(board: &mut Board, position: CardId, to: PileId) {
-    let Some(progress) = top_deck(board, "Progress") else {
+    // Locations are UNCAPPED: any number of heroes may stand on, pass through, or gather at a cell, so
+    // movement is never forced to detour around a full solo. The one-hero limit for a solo lives on its
+    // ENCOUNTER (a hero is seated there to fight it - see `seat_hero`), not on the cell.
+    if let Some(progress) = top_deck(board, "Progress") {
+        let _ = board.move_character(position, to, progress);
+    }
+}
+
+/// The one-hero **Seat** on a place's solo encounter, if it has been created (it is made on the first seating
+/// and removed when it empties, so an empty cell carries no seat).
+pub(crate) fn seat_of(board: &Board, place: PileId) -> Option<PileId> {
+    board
+        .pile(place)?
+        .subpiles()
+        .into_iter()
+        .find(|&s| board.pile(s).map(|p| p.label.as_str()) == Some("Seat"))
+}
+
+/// The hero currently seated on `place`'s solo encounter - the one committed to fight it - or `None`.
+pub(crate) fn seated_hero(board: &Board, place: PileId) -> Option<CardId> {
+    seat_of(board, place).and_then(|s| board.content_cards(s).into_iter().next())
+}
+
+/// **Seat `hero` on `place`'s solo encounter** - commit it as the one hero that fights this lone encounter.
+/// Any hero already seated is swapped out first, back to standing on the cell (un-seating never costs a move).
+/// The Seat pile is made on demand and holds exactly one hero.
+pub(crate) fn seat_hero(board: &mut Board, hero: CardId, place: PileId) {
+    let Some(seat) = seat_of(board, place).or_else(|| board.add_pile(place, "Seat").ok()) else {
         return;
     };
-    // A solo cell seats exactly ONE hero. Marching a second one in SWAPS: the resident is displaced to the
-    // newcomer's origin cell first - a plain relocation, no day spent, since it did not choose to move - then
-    // the newcomer marches in normally. This is what enforces "one hero per adjacent solo": the cell can
-    // never hold two, so a lone puzzle stays a lone puzzle.
-    if is_solo_cell(board, to) {
-        let origin = board.card(position).map(|c| c.home());
-        let resident = board
-            .content_cards(to)
-            .into_iter()
-            .find(|&c| c != position && board.card(c).map(|k| k.card_type()) == Some("hero"));
-        if let (Some(origin), Some(resident)) = (origin, resident) {
-            let at = board.pile(origin).map_or(0, |p| p.cards().len());
-            let _ = board.move_card(resident, origin, at);
-        }
+    // Swap out whoever is seated: back to the cell, still standing there, just no longer committed.
+    for resident in board.content_cards(seat) {
+        let at = board.pile(place).map_or(0, |p| p.cards().len());
+        let _ = board.move_card(resident, place, at);
     }
-    let _ = board.move_character(position, to, progress);
+    let _ = board.move_card(hero, seat, 0);
 }
 
 /// Whether `place` is a **solo cell** - a home-adjacent location whose encounter is a lone fight, not a party
 /// fight. Read from the encounter's `party` flag so the one-hero rule and the cell's own label share a single
 /// source of truth. Party cells (the corners and the capstone) muster the whole band and are not capped.
-fn is_solo_cell(board: &Board, place: PileId) -> bool {
+pub(crate) fn is_solo_cell(board: &Board, place: PileId) -> bool {
     board
         .pile(place)
         .map(|p| p.label.clone())
@@ -432,7 +471,16 @@ fn combat_ready(board: &Board, place: PileId) -> bool {
             .iter()
             .any(|&c| board.card(c).map(|k| k.card_type()) == Some(t))
     };
-    has("hero") && has("encounter")
+    if !has("encounter") {
+        return false;
+    }
+    if is_solo_cell(board, place) {
+        // A solo is ready only once a hero is SEATED on its encounter (the one who will fight it).
+        seated_hero(board, place).is_some()
+    } else {
+        // A party fight is ready as soon as any hero stands at the cell - everyone present fields.
+        has("hero")
+    }
 }
 
 /// Whether the doom oracle's System-deck toggle is currently on. The state lives nowhere but the toggle
@@ -584,55 +632,115 @@ mod tests {
     /// A **solo cell holds one hero**: marching a second in swaps the resident back to the newcomer's origin,
     /// so a lone puzzle can never be ganged up on. (Party cells - the corners - are not capped.)
     #[test]
-    fn a_solo_cell_swaps_rather_than_stacking_heroes() {
+    /// **Locations are uncapped; the solo limit lives on the encounter.** Two heroes may stand on a solo
+    /// cell freely; seating one on its encounter commits exactly that hero to the fight, and seating a second
+    /// swaps the first back onto the cell.
+    fn a_solo_is_fought_by_the_seated_hero_and_seating_swaps() {
         let game = CardTableGame::default();
         let mut board = game.opening();
         let locations = top_deck(&board, "Locations").unwrap();
         let home = board.pile(locations).unwrap().subpiles()[4]; // Ashfen (centre)
         let solo = board.pile(locations).unwrap().subpiles()[1]; // Cinderwatch Keep, an orthogonal solo
 
-        // March the first hero into the solo.
-        let a = card_in(&board, home, "Marksman").expect("the Marksman starts at home");
+        // BOTH heroes march onto the solo cell - no cap, no swap.
+        for name in ["Marksman", "Raider"] {
+            let h = card_in(&board, home, name).unwrap();
+            game.apply(
+                &mut board,
+                &[Intention::March {
+                    position: h,
+                    to: solo,
+                }],
+            );
+            assert!(
+                card_in(&board, solo, name).is_some(),
+                "{name} stands on the cell"
+            );
+        }
+
+        // Seat the Marksman on the encounter: dropping it onto the encounter card yields a Seat intention.
+        let enc = board
+            .content_cards(solo)
+            .into_iter()
+            .find(|&c| board.card(c).map(|k| k.card_type()) == Some("encounter"))
+            .unwrap();
+        let marksman = card_in(&board, solo, "Marksman").unwrap();
+        let seat_intent = game
+            .drop_intention(&board, marksman, DropTarget::Card(enc))
+            .expect("a hero dropped on a solo encounter seats");
+        game.apply(&mut board, &[seat_intent]);
+        assert_eq!(
+            seated_hero(&board, solo),
+            Some(marksman),
+            "the Marksman is seated"
+        );
+
+        // Seat the Raider: it swaps the Marksman back onto the cell.
+        let raider = card_in(&board, solo, "Raider").unwrap();
         game.apply(
             &mut board,
-            &[Intention::March {
-                position: a,
-                to: solo,
+            &[Intention::Seat {
+                hero: raider,
+                place: solo,
             }],
+        );
+        assert_eq!(
+            seated_hero(&board, solo),
+            Some(raider),
+            "the Raider is now seated"
         );
         assert!(
             card_in(&board, solo, "Marksman").is_some(),
-            "the first hero holds the solo"
+            "the swapped-out Marksman is back standing on the cell"
         );
 
-        // March a second hero in: it swaps, the resident returns to the newcomer's origin (home).
-        let b = card_in(&board, home, "Raider").expect("the Raider starts at home");
-        game.apply(
-            &mut board,
-            &[Intention::March {
-                position: b,
-                to: solo,
-            }],
-        );
-
-        let heroes_at_solo: Vec<String> = board
-            .content_cards(solo)
-            .into_iter()
-            .filter_map(|c| {
-                board
-                    .card(c)
-                    .filter(|k| k.card_type() == "hero")
-                    .map(|k| k.front_title().to_string())
-            })
+        // Open the fight: a solo fields exactly the seated hero (the Raider), not both present heroes.
+        let arena = crate::arena::open_fight(&mut board, solo).expect("the solo is combat-ready");
+        let fielded: Vec<String> = crate::arena::wave(&board, arena)
+            .unwrap()
+            .units
+            .iter()
+            .filter(|u| u.side == rules::combat::resolve::Side::Party)
+            .map(|u| u.name.clone())
             .collect();
         assert_eq!(
-            heroes_at_solo,
+            fielded,
             vec!["Raider".to_string()],
-            "the solo holds exactly the newcomer - never two"
+            "the solo is fought by the one seated hero"
         );
+    }
+
+    #[test]
+    /// A **party** encounter (a corner) fields everyone standing at the cell - no seating, no cap.
+    fn a_party_fights_everyone_present() {
+        let game = CardTableGame::default();
+        let mut board = game.opening();
+        let locations = top_deck(&board, "Locations").unwrap();
+        let home = board.pile(locations).unwrap().subpiles()[4]; // Ashfen (centre)
+        let corner = board.pile(locations).unwrap().subpiles()[0]; // The Hollow Rampart, a party corner
+
+        for name in ["Marksman", "Raider"] {
+            let h = card_in(&board, home, name).unwrap();
+            game.apply(
+                &mut board,
+                &[Intention::March {
+                    position: h,
+                    to: corner,
+                }],
+            );
+        }
+        let arena =
+            crate::arena::open_fight(&mut board, corner).expect("a party corner is combat-ready");
+        let fielded: Vec<String> = crate::arena::wave(&board, arena)
+            .unwrap()
+            .units
+            .iter()
+            .filter(|u| u.side == rules::combat::resolve::Side::Party)
+            .map(|u| u.name.clone())
+            .collect();
         assert!(
-            card_in(&board, home, "Marksman").is_some(),
-            "the displaced resident is back at the origin cell"
+            fielded.contains(&"Marksman".to_string()) && fielded.contains(&"Raider".to_string()),
+            "both present heroes field for a party fight: {fielded:?}"
         );
     }
 }

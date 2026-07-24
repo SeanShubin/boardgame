@@ -520,6 +520,7 @@ mod tests {
             .find(|&p| board.pile(p).map(|q| q.label.as_str()) == Some("Progress"))
             .unwrap();
         let _ = board.move_character(hero, vault, progress);
+        crate::board_game::seat_hero(&mut board, hero, vault); // a solo fields the SEATED hero
         let arena = crate::arena::open_fight(&mut board, vault).expect("opens");
 
         let s = scene(&board, arena).expect("a fight scene");
