@@ -4,6 +4,7 @@
 
 use cardtable_model::{Arrangement, Board, CardId, CardKind, Face, Layout, Node, PileId, Recipe};
 use deckbound_content::catalog;
+use rules::combat::step_game::{STEPS, step_coord};
 
 /// Add a face-up card with a name and a [`type`](cardtable_model::Card::card_type) to `pile`, returning
 /// its id. The type is what the card-table shows as its type badge and the deck's top-card label.
@@ -109,60 +110,45 @@ const LOCATIONS: [&str; 9] = [
 // The authored adventurer names (Name Bank § Adventurers) are gone: a hero *is* its kit now, so the party is
 // named for the four kits in `catalog::ROSTER` (Raider / Marksman / Bastion / Bombardier). See the Inn removal.
 
-/// The round's phases in order, each with a one-line mechanical summary (condensed from
-/// `docs/games/deckbound/reference/combat-phases.md`, the canonical text). The Rules deck renders one
-/// card per phase; in combat we will surface these and cycle which one is active.
-const PHASES: [(&str, &str); 10] = [
-    (
-        "Marshal",
-        "Secretly assign each unit an intention - Vanguard, Outrider or Rearguard - and maybe bind a group. Re-declared each round.",
-    ),
-    (
-        "Reveal",
-        "Intentions and groups are revealed together and positions lock. Nobody moves; everything after resolves in the open.",
-    ),
-    (
-        "Ready",
-        "Standing abilities cast now (a Wall's brace, a Support's buff): ally-targeted, auto-land, last the round.",
-    ),
-    (
-        "Intercept",
-        "The front screens the flankers: each Vanguard strikes an enemy Outrider as it crosses, before it can raid.",
-    ),
-    (
-        "Volley",
-        "The back fires on the flankers: each Rearguard shoots an enemy Outrider - the pre-empt, before it arrives.",
-    ),
-    (
-        "Raid",
-        "Surviving Outriders strike the enemy Rearguard they crossed for - the breaker lands on the exposed back.",
-    ),
-    (
-        "Clash",
-        "The lines meet: each Rearguard fires an enemy Vanguard, and each engaging Vanguard strikes an enemy Vanguard.",
-    ),
-    (
-        "Breach",
-        "The deep blows land last: a Vanguard crosses to an exposed enemy Rearguard; stranded Outriders fall on the front.",
-    ),
-    (
-        "Wipe pile",
-        "The boundary rule of every combat phase above, not a step of its own: as each phase ends its damage pile clears - sub-Grit damage that didn't flip a Health card does not carry to the next phase. Only Health persists; there is no separate end-of-round wipe.",
-    ),
-    (
-        "Refresh",
-        "Round end (the Reset): spent Tempo resets, Health carries over, the round advances. Five undecided rounds is a draw.",
-    ),
+/// A one-line summary for each of the round's eight phases, **aligned to [`STEPS`]** order. The phase NAMES
+/// and ORDER come from the engine (`step_game::STEPS` / `step_coord`), so the Rules deck can only ever name a
+/// phase the machine actually runs; only this prose lives here. (Length is asserted to match `STEPS`.)
+const PHASE_BLURB: [&str; 8] = [
+    // 1 Havoc
+    "Point-blank and in-region, mutual: prior-round outriders and their hosts trade. Each outrider aims one tier - the vanguard it is tangled with or the rearguard it crossed to reach.",
+    // 2 Withdraw
+    "A surviving outrider may rejoin its own line, free - standing the Havoc was the price.",
+    // 3 Skirmish
+    "The early front trade, vanguard on vanguard. A line strike here bars your own crossing this round.",
+    // 4 Crossing
+    "A vanguard that declared no line strike may walk into their line, uncontested, landing as an outrider.",
+    // 5 Defensive Volley
+    "Rearguards fire on the enemy outriders in their zone - one-way, the opening blow only.",
+    // 6 Raid
+    "This round's fresh arrivals strike a back-line target - the opening blow only, and it may still dodge.",
+    // 7 Assault
+    "All firepower to bear: rearguard fire, and every vanguard that held back swings here.",
+    // 8 Advance
+    "Reach an enemy rearguard only when its vanguard is already gone BY this step - the same-round advance on a collapsed front.",
 ];
 
-/// The one-line mechanical summary for a phase name (from [`PHASES`]), or `""` if unknown.
-fn phase_detail(name: &str) -> &'static str {
-    PHASES
-        .iter()
-        .find(|(n, _)| *n == name)
-        .map(|&(_, detail)| detail)
-        .unwrap_or_default()
-}
+/// The four minor steps every strike runs, inside any phase - the **Interaction**. The Rules deck renders
+/// these as a drill-in sub-deck so the round schedule and the per-strike resolution are both explained.
+const INTERACTION: [(&str, &str); 4] = [
+    ("Target", "Name whom you strike, or pass."),
+    (
+        "Bid",
+        "The reach contest: tempo flipped at Finesse against the target's dodge. Committing more only prices out the slip - it never buys more damage.",
+    ),
+    (
+        "Strike",
+        "The free opening blow, plus one more strike per poured tempo card, at Might each.",
+    ),
+    (
+        "Resolve",
+        "Damage applies: Health flips one card per Grit crossed, the damage pool wipes, and a body emptied is downed.",
+    ),
+];
 
 /// Lay a **Free** deck's content out in a tidy grid so the very first render is clean. A freely-placed
 /// zone shares the felt with the floating overlays (title / Back), so the seed **leaves the top row
@@ -381,65 +367,46 @@ pub fn sample_table() -> Board {
     )
     .expect("locations exists");
 
-    // A "Rules" deck: the round's phases as a two-level **hierarchy** (organizational only — nothing
-    // mechanical changes). The five damage-dealing phases are children of a parent **Engage** sub-deck;
-    // the rest are leaf cards. Every phase title carries an `(x/y)` sibling position, and the Engage card
-    // lists its children. A Free deck (expanding a card shoves neighbours clear), seeded tidy.
-    const TOP: [&str; 6] = [
-        "Marshal",
-        "Reveal",
-        "Ready",
-        "Engage",
-        "Wipe pile",
-        "Refresh",
-    ];
-    const ENGAGE_CHILDREN: [&str; 5] = ["Intercept", "Volley", "Raid", "Clash", "Breach"];
+    // A "Rules" deck: the round's EIGHT phases as leaf cards - names and order straight from the engine's
+    // `STEPS` / `step_coord`, so the deck can only ever name a phase the machine actually runs - plus an
+    // "Interaction" sub-deck for the four minor steps every strike runs INSIDE any phase (Target -> Bid ->
+    // Strike -> Resolve). A Free deck (expanding a card shoves neighbours clear), seeded tidy.
     let rules = tree.add_pile(root, "Rules").expect("root exists");
-    for (i, &name) in TOP.iter().enumerate() {
-        let pos = format!("({}/{})", i + 1, TOP.len());
-        if name == "Engage" {
-            // The parent deck of the damage-dealing phases; drill in to see its children.
-            let engage = tree.add_pile(rules, "Engage").expect("rules exists");
-            for (j, &child) in ENGAGE_CHILDREN.iter().enumerate() {
-                let title = format!("{child} ({}/{})", j + 1, ENGAGE_CHILDREN.len());
-                let id = typed(&mut tree, engage, &title, "phase");
-                tree.set_card_detail(id, vec![phase_detail(child).to_string()])
-                    .expect("child phase card");
-            }
-            // Engage's label is the parent card: name + its `(x/y)`. Its children are one drill-in away
-            // and its damage-order summary is in the detail, so the title stays short.
-            let label = format!("Engage {pos}");
-            let engage_zone = typed(&mut tree, engage, &label, "phase");
-            tree.set_card_kind(engage_zone, CardKind::Zone)
-                .expect("engage label");
-            tree.set_card_detail(
-                engage_zone,
-                vec![
-                    "Intercept - Vanguard -> Outrider".into(),
-                    "Volley - Rearguard -> Outrider".into(),
-                    "Raid - Outrider -> Rearguard".into(),
-                    "Clash - Rearguard / Vanguard -> Vanguard".into(),
-                    "Breach - the trailing blows land".into(),
-                    "Each combat phase banks its own damage pile and wipes it at that boundary: sub-Grit damage does not carry to the next.".into(),
-                ],
-            )
-            .expect("engage detail");
-            grid_layout(&mut tree, engage, 3);
-            tree.set_layout(
-                engage,
-                Layout {
-                    arrangement: Arrangement::Free,
-                    editable: true,
-                },
-            )
-            .expect("engage exists");
-        } else {
-            let title = format!("{name} {pos}");
-            let id = typed(&mut tree, rules, &title, "phase");
-            tree.set_card_detail(id, vec![phase_detail(name).to_string()])
-                .expect("leaf phase card");
-        }
+    for (s, blurb) in STEPS.into_iter().zip(PHASE_BLURB) {
+        let (k, name) = step_coord(s);
+        let id = typed(&mut tree, rules, &format!("{k}. {name}"), "phase");
+        tree.set_card_detail(id, vec![blurb.to_string()])
+            .expect("phase card");
     }
+    // The Interaction: drill in to see the four minor steps a single strike runs, in any phase.
+    let interaction = tree.add_pile(rules, "Interaction").expect("rules exists");
+    for (i, &(name, detail)) in INTERACTION.iter().enumerate() {
+        let id = typed(
+            &mut tree,
+            interaction,
+            &format!("{}. {name}", i + 1),
+            "phase",
+        );
+        tree.set_card_detail(id, vec![detail.to_string()])
+            .expect("interaction card");
+    }
+    let interaction_zone = typed(&mut tree, interaction, "Interaction", "phase");
+    tree.set_card_kind(interaction_zone, CardKind::Zone)
+        .expect("interaction label");
+    tree.set_card_detail(
+        interaction_zone,
+        vec!["Every strike, in any phase, runs these four minor steps.".into()],
+    )
+    .expect("interaction detail");
+    grid_layout(&mut tree, interaction, 2);
+    tree.set_layout(
+        interaction,
+        Layout {
+            arrangement: Arrangement::Free,
+            editable: true,
+        },
+    )
+    .expect("interaction exists");
     let rules_zone = typed(&mut tree, rules, "Rules", "Label");
     tree.set_card_kind(rules_zone, CardKind::Zone)
         .expect("rules zone card");
@@ -595,7 +562,7 @@ mod tests {
         //   Numbers   9 digits x12 copies + a label
         //   Locations a Zone card + 9 place names + 9 encounter headers + 9 Rumors (app-only readouts).
         //             The party's 4 map positions come out of Heroes, so they're already counted there.
-        //   Rules     5 leaf phases + a label, and the Engage sub-deck's 5 + a label
+        //   Rules     8 leaf phases + a label, and the Interaction sub-deck's 4 + a label
         //   Progress  a Zone label (Day 0; the 4 move markers also come out of Heroes)
         //   Events    the Day Passed x12 reserve + a label
         //   Bestiary  6 creature `foe` stacks x4 + a label
@@ -606,7 +573,7 @@ mod tests {
                 + (5 * 5 + 1)
                 + (9 * 12 + 1)
                 + (1 + 9 + 9 + 9)
-                + ((5 + 1) + (5 + 1))
+                + ((8 + 1) + (4 + 1))
                 + 1
                 + (12 + 1)
                 + (6 * 4 + 1)
@@ -1184,11 +1151,13 @@ mod tests {
             .find(|&&id| t.pile(id).unwrap().label == "Rules")
             .unwrap();
         let first = t.content_cards(rules_id)[0];
-        assert_eq!(back.card(first).unwrap().name(), "Marshal (1/6)");
+        assert_eq!(back.card(first).unwrap().name(), "1. Havoc");
     }
 
+    /// The Rules deck names the round's **eight phases** (in `STEPS` order, so it can never drift from the
+    /// engine) as leaf cards, plus an **Interaction** sub-deck for the four minor steps every strike runs.
     #[test]
-    fn rules_phases_form_a_hierarchy_with_engage_parenting_the_damage_phases() {
+    fn rules_deck_names_the_eight_phases_and_the_interaction() {
         let t = sample_table();
         let root = t.pile(t.root_id()).unwrap();
         let rules = t
@@ -1201,47 +1170,34 @@ mod tests {
             )
             .unwrap();
 
-        // Five leaf phases as content cards, each with an (x/6) sibling position.
-        let leaves: Vec<&str> = t
+        // Eight leaf phases as content cards - named and ordered straight from the engine's schedule.
+        let leaves: Vec<String> = t
             .content_cards(rules.id)
             .iter()
-            .map(|&c| t.card(c).unwrap().name())
+            .map(|&c| t.card(c).unwrap().name().to_string())
             .collect();
-        assert_eq!(
-            leaves,
-            [
-                "Marshal (1/6)",
-                "Reveal (2/6)",
-                "Ready (3/6)",
-                "Wipe pile (5/6)",
-                "Refresh (6/6)"
-            ]
-        );
+        let want: Vec<String> = STEPS
+            .into_iter()
+            .map(|s| {
+                let (k, name) = step_coord(s);
+                format!("{k}. {name}")
+            })
+            .collect();
+        assert_eq!(leaves, want, "the deck's phases are the engine's STEPS");
 
-        // Engage is the parent sub-deck of the damage phases; its label lists the children and its (x/6).
+        // The Interaction sub-deck: the four minor steps a single strike runs, plus its own label.
         assert_eq!(rules.subpiles().len(), 1);
-        let engage = t.pile(rules.subpiles()[0]).unwrap();
-        assert_eq!(engage.label, "Engage");
-        assert_eq!(
-            t.card(*engage.cards().last().unwrap()).unwrap().name(),
-            "Engage (4/6)"
-        );
-
-        // Five child phases, each with an (x/5) sibling position.
+        let interaction = t.pile(rules.subpiles()[0]).unwrap();
+        assert_eq!(interaction.label, "Interaction");
         let children: Vec<&str> = t
-            .content_cards(engage.id)
+            .content_cards(interaction.id)
             .iter()
             .map(|&c| t.card(c).unwrap().name())
             .collect();
+        assert_eq!(children, ["1. Target", "2. Bid", "3. Strike", "4. Resolve"]);
         assert_eq!(
-            children,
-            [
-                "Intercept (1/5)",
-                "Volley (2/5)",
-                "Raid (3/5)",
-                "Clash (4/5)",
-                "Breach (5/5)"
-            ]
+            t.card(*interaction.cards().last().unwrap()).unwrap().name(),
+            "Interaction"
         );
 
         // Topped by a "Rules" Zone label.

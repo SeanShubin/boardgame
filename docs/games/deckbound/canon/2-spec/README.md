@@ -246,13 +246,16 @@ exists in code; the par-solver that consumes the envelope is the pending build o
 
 ---
 
-## 1. The Clash — *the tactical core* — ⛔ SUPERSEDED
+## 1. The Clash — *the tactical core* — 🟡 DEFERRED (pluggable)
 
-> **SUPERSEDED (human-vetted 2026-07-24).** The shipped combat has no stance-triangle, edge, or Parry-steal:
-> a strike resolves as the step machine's **Interaction** — Target → Bid → Strike → Resolve (a tempo-flip
-> reach contest weighted by Finesse, then Might over the Grit bar) — not a four-card duel. This section is a
-> retired tactical core, kept only until it is rewritten. Canonical model:
-> [`combat-round-sequence.md`](../../combat-round-sequence.md).
+> **DEFERRED, not retired (clarified 2026-07-24).** The RPS-style Clash (stances / triangle / edge /
+> Parry-steal) is a **pluggable tactical layer, deliberately deferred** until the core deterministic combat is
+> fully working — by intent, to keep balance simple and the foe deterministic (the "greedy is optimal against
+> a deterministic opponent" property depends on there being no hidden RPS mind-game). It is **future work**,
+> not a road not taken. What ships **now** in its place is the deterministic **Interaction**: a strike
+> resolves Target → Bid → Strike → Resolve (a Finesse-weighted tempo-flip reach contest, then Might over the
+> Grit bar). Current combat mechanics: [`combat-round-sequence.md`](../../combat-round-sequence.md); this
+> section moves to `future-possibilities.md` in the reorg.
 
 The atom of combat: two Actors **predicting each other** across a hidden, simultaneous
 mix-up played with cards. Design background:
