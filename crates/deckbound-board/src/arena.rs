@@ -1543,8 +1543,10 @@ fn all_of_type(board: &Board, arena: PileId, card_type: &str) -> Vec<CardId> {
 }
 
 /// Tear the arena down: foes back to the Bestiary, heroes back to the place as position cards, the arena
-/// removed. `clear_encounter` removes a beaten encounter; `spend_day` advances the day clock.
-fn teardown(board: &mut Board, arena: PileId, clear_encounter: bool, spend_day: bool) {
+/// removed. `spend_day` advances the day clock. The **encounter is left in place** so the fight can be
+/// fought again - a beaten encounter is marked by its [`record_outcome`] deck (a "Victory" pile that stays
+/// at the location), never by removing the encounter.
+fn teardown(board: &mut Board, arena: PileId, spend_day: bool) {
     let place = place_of(board, arena);
     let bestiary = top_deck(board, "Bestiary");
 
@@ -1561,14 +1563,6 @@ fn teardown(board: &mut Board, arena: PileId, clear_encounter: bool, spend_day: 
             let at = board.pile(place).map_or(0, |p| p.cards().len());
             let _ = board.move_card(u, place, at);
         }
-        if clear_encounter
-            && let Some(enc) = board
-                .content_cards(place)
-                .into_iter()
-                .find(|&c| board.card(c).map(|k| k.card_type()) == Some("encounter"))
-        {
-            let _ = board.remove_card(enc);
-        }
     }
 
     let root = board.root_id();
@@ -1581,15 +1575,16 @@ fn teardown(board: &mut Board, arena: PileId, clear_encounter: bool, spend_day: 
     }
 }
 
-/// **Fold the fight back** after a decision: on a win the encounter is cleared; the fight spends a day. The
-/// record goes down at the place before the arena is torn down.
+/// **Fold the fight back** after a decision: the fight spends a day, and the record deck goes down at the
+/// place before the arena is torn down. The encounter is **left standing** so the fight can be repeated -
+/// win or lose, the location stays combat-ready; the record deck ("Victory" / "Defeat" / "Draw") is how you
+/// tell what happened here and whether it has been beaten.
 pub fn fold_back(board: &mut Board, arena: PileId) {
     let result = outcome(board, arena);
-    let won = result == Some(Outcome::Victory);
     if let (Some(place), Some(result)) = (place_of(board, arena), result) {
         record_outcome(board, arena, place, result);
     }
-    teardown(board, arena, won, true);
+    teardown(board, arena, true);
 }
 
 /// **What happened here**, left at the place as a pile: a named result, and the whole battle inside it, one
@@ -1637,7 +1632,7 @@ fn record_outcome(board: &mut Board, arena: PileId, place: PileId, result: Outco
 /// **Cancel the fight** (retreat): tear the arena down with nothing resolved - encounter intact, no day
 /// spent.
 pub fn cancel_fight(board: &mut Board, arena: PileId) {
-    teardown(board, arena, false, false);
+    teardown(board, arena, false);
 }
 
 /// **Restart the fight**: every combatant back to full health, fresh tempo, and its weapon rank on its own
@@ -1966,6 +1961,39 @@ mod tests {
             !board.content_cards(record).is_empty(),
             "the record holds the battle, one card per round"
         );
+    }
+
+    /// A decided fight leaves its encounter **standing**, so the same location can be fought again. The
+    /// "Victory" record deck, not a vanished encounter, is what marks a place as beaten - which is exactly
+    /// what makes a re-fight possible.
+    #[test]
+    fn a_beaten_fight_can_be_repeated() {
+        let mut board = sample_table();
+        let arena = open_a_fight_at(&mut board, &["Raider"], Some("The Sundered Vault"));
+        auto_play(&mut board, arena);
+        assert_eq!(
+            outcome(&board, arena),
+            Some(Outcome::Victory),
+            "the Raider solos The Sundered Vault"
+        );
+        let place = place_of(&board, arena).unwrap();
+        fold_back(&mut board, arena);
+
+        let has_type = |t: &str| {
+            board
+                .content_cards(place)
+                .into_iter()
+                .any(|c| board.card(c).map(|k| k.card_type()) == Some(t))
+        };
+        assert!(
+            has_type("encounter"),
+            "the encounter is left standing after a win - the location can be re-fought"
+        );
+        assert!(has_type("hero"), "the hero returned to the place");
+
+        // And a fresh fight really opens at the same place.
+        open_fight(&mut board, place).expect("the location is combat-ready again");
+        assert!(find_arena(&board).is_some(), "a second fight stands up");
     }
 
     /// **The three-beat gesture: WHO -> WHAT -> WHOM.** The verb button enters targeting (the mid-gesture
