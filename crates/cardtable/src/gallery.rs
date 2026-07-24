@@ -338,6 +338,7 @@ fn sample(
 /// After a few frames (so the font has loaded and the text has laid out), measure every sample **once** and
 /// record which ones overflow. Shared by the windowed gallery and the headless build-time check — the
 /// measurement is the same either way; only the reporting differs (see [`report_gallery`]).
+#[allow(clippy::too_many_arguments)] // a Bevy system: each param is a distinct query/resource
 fn audit_cards(
     mut audit: ResMut<Audit>,
     mut frames: Local<u32>,
@@ -346,6 +347,7 @@ fn audit_cards(
     boxes: Query<(&ComputedNode, &UiGlobalTransform), With<CardRef>>,
     children_q: Query<&Children>,
     rect_q: Query<(&ComputedNode, &UiGlobalTransform)>,
+    text_q: Query<(&ComputedNode, &bevy::text::TextLayoutInfo)>,
 ) {
     if audit.done {
         return;
@@ -366,10 +368,18 @@ fn audit_cards(
             continue;
         };
         let over = descendant_overflow(card_e, gt.translation, cn.size * 0.5, &children_q, &rect_q);
+        // A line truncated INSIDE its box (glyphs run off the end and clip) doesn't spill, so
+        // `descendant_overflow` can't see it - the exact bug that shipped clipped card text while the audit
+        // stayed green. Measure that natural-width clip directly. Wrapped text reports a few subpixels of glyph
+        // ink past its wrap boundary, which is not truncation, so allow a small slack (real clips ran to
+        // hundreds of px); anything past it is a genuine clip folded into the horizontal fault.
+        const TEXT_CLIP_SLACK: f32 = 6.0;
+        let clip = (max_text_clip(card_e, &children_q, &text_q) - TEXT_CLIP_SLACK).max(0.0);
+        let over_x = over.x.max(clip);
         // Vertical overflow is a fault for the fixed-height Small AND Medium cards (the model sizes them and
         // the renderer clips); only Large scrolls, so its vertical is free.
         let tall = if s.size == "Large" { 0.0 } else { over.y };
-        if over.x > 1.0 || tall > 1.0 {
+        if over_x > 1.0 || tall > 1.0 {
             let scale = cn.inverse_scale_factor; // physical → logical px
             audit.offenders.push(wrapper);
             audit.overflows.push(TextOverflow {
@@ -378,7 +388,7 @@ fn audit_cards(
                     .map(|c| c.name().to_string())
                     .unwrap_or_default(),
                 size: s.size,
-                over_x: over.x * scale,
+                over_x: over_x * scale,
                 over_y: tall * scale,
             });
         }
@@ -441,6 +451,32 @@ fn all_cards(tree: &Board) -> Vec<CardId> {
 /// The worst distance (physical px, per axis) any descendant of `card`'s box extends *beyond* that box —
 /// 0 on an axis that fits. Walks the whole subtree so wrapped text, a badge, or any nested node counts.
 /// Rects are centre + half-size in the shared UI space.
+/// The worst horizontal **clip** among a card's text descendants, in physical px: how far a text line's
+/// laid-out glyphs run past the box the node was given. This is the truncation `descendant_overflow` cannot
+/// see - a NoWrap line whose node was sized to the card, so the node fits but the glyphs are cut off by the
+/// card's `Overflow::clip`. `TextLayoutInfo::size` is the glyphs' natural extent (NoWrap ignores the width
+/// bound); `ComputedNode::size` is the box. When the former exceeds the latter, text is being clipped.
+fn max_text_clip(
+    card: Entity,
+    children_q: &Query<&Children>,
+    text_q: &Query<(&ComputedNode, &bevy::text::TextLayoutInfo)>,
+) -> f32 {
+    let mut worst = 0.0f32;
+    let mut stack: Vec<Entity> = children_q
+        .get(card)
+        .map(|c| c.iter().collect())
+        .unwrap_or_default();
+    while let Some(e) = stack.pop() {
+        if let Ok((cn, layout)) = text_q.get(e) {
+            worst = worst.max(layout.size.x - cn.size.x);
+        }
+        if let Ok(ch) = children_q.get(e) {
+            stack.extend(ch.iter());
+        }
+    }
+    worst
+}
+
 fn descendant_overflow(
     card: Entity,
     center: Vec2,

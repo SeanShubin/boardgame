@@ -4,10 +4,11 @@
 //! exactly this footprint (a pass-through), so the whole layout - positions, sizes, overlaps - is known
 //! without ever rendering. This is the model owning "where the cards are in 2-space".
 //!
-//! Each content line is drawn as **one** line (no wrap, horizontal overflow clips), so a card's height is an
-//! exact function of its line count - never dependent on text wrapping or font measurement. Width is fixed
-//! per size. The constants here are the single source of truth: the renderer reads the footprint, it does
-//! not define its own card sizes.
+//! Each content line **wraps** within the card width, so a long line stays fully readable (it flows onto
+//! extra rows) instead of clipping. The model can't measure a font, so it *estimates* the wrapped-row count
+//! from the character count ([`wrapped_lines`]) - deliberately an OVER-estimate (see [`CHARS_PER_LINE`]), so
+//! the box is always at least as tall as the text, never shorter. Width is fixed per size. The text-fit
+//! audit (`boardgame`'s `card_text_fits`) is the check that the estimate stays conservative enough.
 
 use super::{Pos, Size};
 
@@ -52,8 +53,30 @@ const TITLE_H: i32 = 24;
 /// The **type badge** row Medium cards carry under the title (its padding + `FONT_BADGE` line). A Medium
 /// card is assumed to have one; a card with no type just wears the extra slack (better than clipping).
 const BADGE_H: i32 = 18;
-/// One content line (a detail or panel line, `FONT_BODY`), drawn no-wrap so it is exactly one line tall.
+/// One content ROW (a wrapped row of a detail or panel line, `FONT_BODY`) - one line tall.
 const BODY_LINE_H: i32 = 17;
+
+/// Horizontal chrome on a Medium card: padding (left + right) plus border (left + right).
+const H_CHROME: i32 = 2 * 10 + 2 * 2;
+/// The inner text width of a Medium card - the width a wrapped content line lays out within.
+pub const MEDIUM_TEXT_W: i32 = MEDIUM_W - H_CHROME;
+/// A conservative characters-per-wrapped-row for `FONT_BODY` at [`MEDIUM_TEXT_W`]. Deliberately LOW (as if
+/// every glyph were wide) so [`wrapped_lines`] OVER-counts rows rather than under: a card ends a touch tall,
+/// never clipped. The text-fit audit is what verifies this stays conservative for the real content.
+const CHARS_PER_LINE: usize = 24;
+
+/// How many rendered rows a content string occupies once **wrapped** to a Medium card's width, estimated
+/// from its character count (word-wrap, so this is an approximation - kept conservative, see
+/// [`CHARS_PER_LINE`]). A non-empty string is at least one row.
+pub fn wrapped_lines(text: &str) -> usize {
+    text.chars().count().div_ceil(CHARS_PER_LINE).max(1)
+}
+
+/// The total wrapped-row count across a card's detail (or panel) strings - what [`footprint`] budgets height
+/// for now that content wraps instead of clipping. Empty content is zero rows.
+pub fn wrapped_count(lines: &[String]) -> usize {
+    lines.iter().map(|l| wrapped_lines(l)).sum()
+}
 
 /// A card's on-felt footprint `(width, height)` in logical px, from its size and content line counts. The
 /// renderer draws the card at exactly this size (content clips to fit), so this is authoritative for layout.

@@ -298,7 +298,11 @@ impl Card {
     /// content by [`layout::footprint`](super::layout::footprint), not measured by the renderer. The renderer
     /// draws the card at exactly this size, so where every card sits in 2-space is known without rendering.
     pub fn footprint(&self) -> Pos {
-        super::layout::footprint(self.size, self.detail.len(), self.panel.len())
+        super::layout::footprint(
+            self.size,
+            super::layout::wrapped_count(&self.detail),
+            super::layout::wrapped_count(&self.panel),
+        )
     }
 
     /// The [`Recipe`] this card yields when combined (a kit's recipe), or `None` for an ordinary card.

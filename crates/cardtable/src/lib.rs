@@ -4131,8 +4131,12 @@ fn spawn_card_medium(parent: &mut ChildSpawnerCommands, card: &Card) {
             // the card gallery draws every size, so the box must follow the drawn size, not the stored one).
             // The renderer is a pass-through, not the authority. Content clips to fit (never spills).
             height: Val::Px(
-                card_layout::footprint(Size::Medium, card.detail().len(), card.panel().len()).y
-                    as f32,
+                card_layout::footprint(
+                    Size::Medium,
+                    card_layout::wrapped_count(card.detail()),
+                    card_layout::wrapped_count(card.panel()),
+                )
+                .y as f32,
             ),
             flex_direction: FlexDirection::Column,
             padding: UiRect::all(Val::Px(10.0)),
@@ -4164,9 +4168,9 @@ fn spawn_card_medium(parent: &mut ChildSpawnerCommands, card: &Card) {
                     font_size: FONT_BODY,
                     ..default()
                 },
-                // One line per detail line (no wrap) so the rendered height matches the model's line-count
-                // footprint exactly; an over-long line clips horizontally.
-                TextLayout::no_wrap(),
+                // Detail lines WRAP: a long line flows onto extra rows (fully readable) instead of clipping.
+                // The model's footprint budgets height for the wrapped-row count (`wrapped_count`), so the box
+                // is at least as tall as the wrapped text.
                 TextColor(CARD_INK),
             ));
         }
@@ -4182,8 +4186,12 @@ fn spawn_card_large(parent: &mut ChildSpawnerCommands, card: &Card) {
             // Sized to the **Large** footprint (capped at LARGE_MAX_H); content beyond it scrolls. Boxes at
             // Large regardless of the card's stored size, so the gallery (which draws every size) is accurate.
             height: Val::Px(
-                card_layout::footprint(Size::Large, card.detail().len(), card.panel().len()).y
-                    as f32,
+                card_layout::footprint(
+                    Size::Large,
+                    card_layout::wrapped_count(card.detail()),
+                    card_layout::wrapped_count(card.panel()),
+                )
+                .y as f32,
             ),
             flex_direction: FlexDirection::Column,
             padding: UiRect::all(Val::Px(12.0)),

@@ -118,7 +118,7 @@ const LOCATIONS: [&str; 9] = [
 const PHASE_BLURB: [&[&str]; 8] = [
     // 1 Havoc
     &[
-        "Point-blank in-region trade.",
+        "Point-blank in-region.",
         "Outriders aim one tier;",
         "their hosts strike back.",
     ],
@@ -141,13 +141,13 @@ const PHASE_BLURB: [&[&str]; 8] = [
     &[
         "Rearguards fire on enemy",
         "outriders in their zone.",
-        "One-way, opening blow only.",
+        "One-way, opening blow.",
     ],
     // 6 Raid
     &[
         "This round's arrivals",
         "strike a back-line target.",
-        "Opening blow only, evadable.",
+        "One blow; it may dodge.",
     ],
     // 7 Assault
     &[
@@ -181,7 +181,7 @@ const INTERACTION: [(&str, &[&str]); 4] = [
         "Strike",
         &[
             "The free opening blow,",
-            "plus one per poured tempo,",
+            "plus one per tempo,",
             "at Might each.",
         ],
     ),
@@ -190,8 +190,8 @@ const INTERACTION: [(&str, &[&str]); 4] = [
         &[
             "Damage applies: Health",
             "flips one card per Grit.",
-            "The pool wipes; an emptied",
-            "body is downed.",
+            "The pool then wipes.",
+            "An emptied body is down.",
         ],
     ),
 ];
