@@ -960,12 +960,11 @@ pub fn commit_label(board: &Board, arena: PileId) -> String {
 /// What taking a choice card does to the focused body's order-in-progress.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum ChoiceAction {
-    /// Complete an order (a target picked, a hold, a movement answer).
+    /// Complete an order (a hold, or a movement answer). Aiming completes by tapping a lit enemy, not a card.
     Stage(Staged),
-    /// Choose the targeted action (the WHAT) - enter targeting; the WHOM completes it.
+    /// Choose the targeted action (the WHAT) - enter targeting; a tap on a lit enemy completes it, and a tap
+    /// on the commanding body drops the gesture (there is no Cancel card).
     BeginAim,
-    /// Drop the chosen action and return to the order menu.
-    CancelAim,
 }
 
 /// The synthetic [`CardId`] base for **action tiles**. Real card ids are a small monotonic counter, so a
@@ -1036,20 +1035,9 @@ pub(crate) fn step_choices(board: &Board, arena: PileId) -> Vec<(Choice, ChoiceA
             ));
         }
         _ if w.aiming => {
-            // The WHOM: one card per ringed target (the board's rings and these cards are the same menu),
-            // plus the way back out of the gesture. The label is just the target's NAME - you are already
-            // targeting, so the verb is implied; the consequence line says what the strike does.
-            for &t in &w.targets {
-                let text = strike_consequence(&w.units, i, t);
-                out.push((
-                    Choice::new(w.units[t].name.clone(), text),
-                    ChoiceAction::Stage(Staged::Aim(w.cards[t])),
-                ));
-            }
-            out.push((
-                Choice::new("Cancel", "put the action back - choose again"),
-                ChoiceAction::CancelAim,
-            ));
+            // The WHOM has NO cards: the lit enemies on the board ARE the menu - each carries its own
+            // winnable/doomed and completes the strike when tapped. To back out, tap the commanding body
+            // again (it drops the gesture), so there is no Cancel card either.
         }
         _ => {
             // The WHAT: begin the strike (entering targeting - the ringed tiles complete it), or hold. Just
@@ -1069,26 +1057,6 @@ pub(crate) fn step_choices(board: &Board, arena: PileId) -> Vec<(Choice, ChoiceA
         }
     }
     out
-}
-
-/// What aiming at `t` buys, in one line: the bid the reach will make, the dodge it must clear, and the
-/// damage the blows would bank - both compared numbers on the page, same as the log will say.
-fn strike_consequence(units: &[Combatant], a: usize, t: usize) -> String {
-    let (u, foe) = (&units[a], &units[t]);
-    if u.aoe {
-        return format!(
-            "an area strike: one tempo, unevadable, every enemy in {}'s tier",
-            foe.name
-        );
-    }
-    let reach = rules::combat::regions::reach_cards(units, a, t);
-    let strikes = 1 + u.tempo.saturating_sub(reach);
-    let dmg = u.might.saturating_sub(foe.armor) * strikes;
-    format!(
-        "flip {reach} tempo to reach (dodge floor {}), then up to {strikes} blows = {dmg} damage vs Grit {}",
-        foe.tempo * foe.finesse.max(1),
-        foe.grit
-    )
 }
 
 /// The choice cards for the current wave, for the renderer.
@@ -1126,7 +1094,6 @@ pub fn choose(board: &mut Board, index: usize) {
             f.staged = None;
             f.aiming = true;
         }),
-        ChoiceAction::CancelAim => edit_flags(board, card, |f| f.aiming = false),
     }
 }
 
@@ -1160,12 +1127,17 @@ pub fn handle_tap(board: &mut Board, card: CardId) {
                 f.aiming = false;
             });
         } else {
-            // Select: move the active mark here.
+            // Select: move the active mark here, and clear any aiming everywhere - switching bodies mid-aim
+            // must not strand the abandoned one in a half-aiming state (it would re-enter targeting the next
+            // time it was selected). The freshly selected body starts at the WHAT beat, not aiming.
             for (j, &c) in w.cards.iter().enumerate() {
                 if w.units[j].side != Side::Party {
                     continue;
                 }
-                edit_flags(board, c, |f| f.active = j == i);
+                edit_flags(board, c, |f| {
+                    f.active = j == i;
+                    f.aiming = false;
+                });
             }
         }
         return;
@@ -1373,6 +1345,85 @@ fn write_back(board: &mut Board, arena: PileId, cards: &[CardId], state: &StepSt
 
 // ---- the outlooks (where each choice leads) ------------------------------------------------------------
 
+/// The solver **base** for scoring the focused body's candidates: the seated state with every OTHER staged
+/// party order pinned and the cursor resting on the focus, ready for `StepCombat::apply(candidate)`. Returns
+/// the wave and focus alongside it. `None` when the fight is not in a scorable state (no focus, or a staged
+/// body dropped out of eligibility). Pinning EXACTLY the staged orders + this hero, and leaving every other
+/// body to the solver, is what makes the verdict exact for any selection order (the wave declares order-free).
+fn outlook_base(board: &Board, arena: PileId) -> Option<(StepState, Wave, usize)> {
+    let w = wave(board, arena)?;
+    let seated = seat(board, arena)?;
+    let focus = w.focus?;
+    let mut base = seated.state;
+    let staged_first: Vec<usize> = (0..w.units.len())
+        .filter(|&i| i != focus && w.units[i].side == Side::Party && w.staged[i].is_some())
+        .collect();
+    let mut prefix = staged_first.clone();
+    prefix.push(focus);
+    base.prioritize(&prefix);
+    for &i in &staged_first {
+        if base.deciding()? != i {
+            return None; // a staged body dropped out of eligibility mid-wave; bail rather than mislead
+        }
+        let c = match w.staged[i] {
+            Some(Staged::Aim(t)) => StepChoice::Strike(w.cards.iter().position(|&c| c == t)),
+            Some(Staged::Hold) => StepChoice::Strike(None),
+            Some(Staged::Go) => StepChoice::Move(true),
+            Some(Staged::Stay) => StepChoice::Move(false),
+            None => return None,
+        };
+        base = StepCombat::apply(&base, &c);
+    }
+    (base.deciding() == Some(focus)).then_some((base, w, focus))
+}
+
+/// Ground one candidate to an outlook against `base`, spending from the shared node allowance `left`.
+fn score_candidate(
+    base: &StepState,
+    solver: &mut Solver<StepCombat>,
+    left: &mut u64,
+    candidate: &StepChoice,
+) -> cardtable_model::Outlook {
+    use cardtable_model::Outlook;
+    let next = StepCombat::apply(base, candidate);
+    let before = solver.nodes();
+    solver.grant(*left);
+    let v = solver.verdict(&next);
+    *left = left.saturating_sub(solver.nodes().saturating_sub(before));
+    match v {
+        Verdict::Winnable => Outlook::Winnable,
+        Verdict::Doomed => Outlook::Doomed,
+        Verdict::Evaluating => Outlook::Evaluating,
+    }
+}
+
+/// While AIMING, the `Winnable`/`Doomed` of striking each **lit enemy**, keyed by its card - so the foe tiles
+/// carry their own outlook now that the per-target cards are gone. One score per footprint body; for an area
+/// strike the memo makes the redundancy (many bodies, one slice, one outcome) nearly free. Empty when not
+/// aiming, or when the fight is not in a scorable state.
+pub fn aim_outlook_by_foe(
+    board: &Board,
+    arena: PileId,
+    solver: &mut Solver<StepCombat>,
+    budget: u64,
+) -> Vec<(CardId, cardtable_model::Outlook)> {
+    let Some((base, w, focus)) = outlook_base(board, arena) else {
+        return Vec::new();
+    };
+    if !w.aiming {
+        return Vec::new();
+    }
+    let mut left = budget;
+    w.footprints[focus]
+        .clone()
+        .into_iter()
+        .map(|m| {
+            let o = score_candidate(&base, solver, &mut left, &StepChoice::Strike(Some(m)));
+            (w.cards[m], o)
+        })
+        .collect()
+}
+
 /// Where each choice on offer **leads** - `Winnable` / `Evaluating` / `Doomed` - index-aligned with
 /// [`scene_choices`], computed with the generic solver over the SAME game the balance gate asserts. The
 /// candidate is applied on top of the orders already staged (in cursor order), and everything undecided is
@@ -1389,50 +1440,9 @@ pub fn choice_outlooks(
     if choices.is_empty() {
         return Vec::new();
     }
-    let Some(w) = wave(board, arena) else {
+    let Some((base, w, _focus)) = outlook_base(board, arena) else {
         return vec![Outlook::Unknown; choices.len()];
     };
-    let Some(seated) = seat(board, arena) else {
-        return vec![Outlook::Unknown; choices.len()];
-    };
-    let Some(focus) = w.focus else {
-        return vec![Outlook::Unknown; choices.len()];
-    };
-
-    // Pin EXACTLY the player's staged orders plus this hero's candidate, and leave every other body to the
-    // solver - whatever order the player selected in. The wave's declaration order is outcome-irrelevant
-    // (one order-free commit-batch), so we REORDER the wave to make [staged bodies..., focus] its prefix,
-    // apply just those, and let the solver search the rest optimally. No stand-in, and exact for any
-    // selection order - the fix the strict forward cursor could not give on its own.
-    let mut base = seated.state;
-    let staged_first: Vec<usize> = (0..w.units.len())
-        .filter(|&i| i != focus && w.units[i].side == Side::Party && w.staged[i].is_some())
-        .collect();
-    let mut prefix = staged_first.clone();
-    prefix.push(focus);
-    base.prioritize(&prefix);
-    // Apply the staged orders (now the prefix) up to - but not including - the focus.
-    for &i in &staged_first {
-        let Some(cursor) = base.deciding() else {
-            return vec![Outlook::Unknown; choices.len()];
-        };
-        if cursor != i {
-            // A staged body dropped out of eligibility (shouldn't happen mid-wave); bail rather than mislead.
-            return vec![Outlook::Unknown; choices.len()];
-        }
-        let c = match w.staged[i] {
-            Some(Staged::Aim(t)) => StepChoice::Strike(w.cards.iter().position(|&c| c == t)),
-            Some(Staged::Hold) => StepChoice::Strike(None),
-            Some(Staged::Go) => StepChoice::Move(true),
-            Some(Staged::Stay) => StepChoice::Move(false),
-            None => unreachable!("staged_first only holds staged bodies"),
-        };
-        base = StepCombat::apply(&base, &c);
-    }
-    // The cursor now rests on the focus.
-    if base.deciding() != Some(focus) {
-        return vec![Outlook::Unknown; choices.len()];
-    }
 
     let mut left = budget;
     // Ground one candidate out to an outlook, spending from the shared allowance.
@@ -1472,8 +1482,6 @@ pub fn choice_outlooks(
                 }
                 best
             }
-            // Cancel decides nothing.
-            ChoiceAction::CancelAim => Outlook::Unknown,
         };
         out.push(outlook);
     }
@@ -1897,11 +1905,14 @@ mod tests {
                     handle_tap(&mut board, w.cards[i]);
                 }
                 Some(_) => {
+                    let n = scene_choices(&board, arena).len();
                     assert!(
-                        !scene_choices(&board, arena).is_empty(),
-                        "a selected hero always has its order buttons on offer"
+                        n >= 2,
+                        "a selected hero always has its order cards on offer"
                     );
-                    choose(&mut board, 0);
+                    // The last card is always a pass (Hold) or a Stay - a Stage that completes the order
+                    // without entering targeting, so every hero gets an order and the loop terminates.
+                    choose(&mut board, n - 1);
                 }
             }
         }
@@ -1981,14 +1992,14 @@ mod tests {
         assert_eq!(w.focus, Some(i), "the click selected the hero");
         assert!(!w.aiming, "no gesture yet");
 
-        // Beat 2 - the WHAT: the first button is the step's verb; taking it enters targeting.
+        // Beat 2 - the WHAT: the first card is Strike..., taking it enters targeting.
         let labels: Vec<String> = scene_choices(&board, arena)
             .iter()
             .map(|c| c.label.clone())
             .collect();
         assert!(
             labels[0].ends_with("..."),
-            "the verb button leads the menu: {labels:?}"
+            "the strike card leads the menu: {labels:?}"
         );
         choose(&mut board, 0);
         let w = wave(&board, arena).unwrap();
@@ -1997,18 +2008,26 @@ mod tests {
             pending_decision(&board, arena).is_some_and(|m| m.contains("targeting")),
             "Commit still counts the body as owed, mid-gesture"
         );
-        assert!(!w.targets.is_empty(), "the targets are on offer");
+        assert!(
+            scene_choices(&board, arena).is_empty(),
+            "no cards while aiming - the lit enemies on the board are the menu"
+        );
+        assert!(!w.footprints[i].is_empty(), "the lit targets are on offer");
 
-        // Cancel puts the action back...
-        let n = scene_choices(&board, arena).len();
-        choose(&mut board, n - 1);
+        // Cancel by tapping the commanding body again: it drops the gesture and backs out to WHO.
+        handle_tap(&mut board, w.cards[i]);
         let w = wave(&board, arena).unwrap();
-        assert!(!w.aiming, "cancelled - back to the order menu");
+        assert!(!w.aiming, "cancelled - gesture dropped");
+        assert!(
+            w.focus.is_none(),
+            "tapping the source backs all the way out"
+        );
 
-        // ...and the full gesture completes by tapping the ringed target.
+        // Re-select, re-enter targeting, and complete the gesture by tapping a lit enemy.
+        handle_tap(&mut board, w.cards[i]);
         choose(&mut board, 0);
         let w = wave(&board, arena).unwrap();
-        let target = w.targets[0];
+        let target = w.footprints[i][0];
         handle_tap(&mut board, w.cards[target]);
         let w = wave(&board, arena).unwrap();
         assert_eq!(

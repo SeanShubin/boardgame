@@ -2634,6 +2634,18 @@ fn draw_scene_tile(parent: &mut ChildSpawnerCommands, tile: &Tile) {
                 TextColor(tone_color(badge.tone)),
             ));
         }
+        // A tile's foresight, when the game gave it one - a foe carries its winnable/doomed here while it is a
+        // live strike target, so "which target is a good idea" reads off the board without a per-target card.
+        if let Some((text, colour)) = outlook_badge(tile.outlook) {
+            c.spawn((
+                Text::new(text),
+                TextFont {
+                    font_size: FONT_BADGE,
+                    ..default()
+                },
+                TextColor(colour),
+            ));
+        }
     });
 }
 

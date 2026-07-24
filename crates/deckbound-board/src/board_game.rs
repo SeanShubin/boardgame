@@ -7,7 +7,7 @@
 use std::sync::{Arc, Mutex};
 
 use cardtable_model::{
-    Arrangement, Board, BoardGame, CardId, CardKind, DropTarget, Outlook, PileId, Scene,
+    Arrangement, Board, BoardGame, CardId, CardKind, DropTarget, Outlook, PileId, Scene, SceneBody,
 };
 
 use crate::sample_table;
@@ -250,13 +250,18 @@ impl BoardGame for CardTableGame {
             let t0 = (!cfg!(target_arch = "wasm32")).then(std::time::Instant::now);
             let outlooks =
                 crate::arena::choice_outlooks(board, arena, &mut doom.solver, NODE_BUDGET);
+            // While aiming there are no action cards; the choices are the lit enemies, so score each and
+            // badge its tile. (One of these two is always empty - action cards exist except during aiming.)
+            let foe_outlooks =
+                crate::arena::aim_outlook_by_foe(board, arena, &mut doom.solver, NODE_BUDGET);
             if let Some(t0) = t0 {
                 doom.elapsed_ms += t0.elapsed().as_secs_f64() * 1000.0;
             }
             doom.frames += 1;
 
             let was_settled = doom.settled;
-            doom.settled = !outlooks.contains(&Outlook::Evaluating);
+            doom.settled = !outlooks.contains(&Outlook::Evaluating)
+                && !foe_outlooks.iter().any(|(_, o)| *o == Outlook::Evaluating);
             // Log the cost the moment it settles, once - the honest answer to "how long did exploring this
             // formation take?", which is a number you only get to see if something writes it down.
             if doom.settled && !was_settled {
@@ -275,8 +280,28 @@ impl BoardGame for CardTableGame {
             for (t, o) in scene.actions.iter_mut().zip(outlooks) {
                 t.outlook = o;
             }
+            // Drop each aiming foe's foresight onto its board tile, found by card id.
+            for (card, o) in foe_outlooks {
+                if let Some(tile) = body_tile_mut(&mut scene, card) {
+                    tile.outlook = o;
+                }
+            }
         }
         Some(scene)
+    }
+}
+
+/// A mutable handle to the scene body tile for `card`, if it is on the board (a lane tile).
+fn body_tile_mut(scene: &mut Scene, card: CardId) -> Option<&mut cardtable_model::Tile> {
+    match &mut scene.body {
+        SceneBody::Lanes(lanes) => lanes
+            .iter_mut()
+            .flat_map(|l| l.left.iter_mut().chain(l.right.iter_mut()))
+            .find(|t| t.card == card),
+        SceneBody::Rows(rows) => rows
+            .iter_mut()
+            .flat_map(|r| r.tiles.iter_mut())
+            .find(|t| t.card == card),
     }
 }
 

@@ -42,14 +42,27 @@ fn main() {
         };
         let tiles = all_tiles(&scene);
 
-        // A hero being commanded (Active on our side)? Tap its first live action CARD - the WHAT beat is a
-        // tile now (verb -> target, or hold), taken by the same tap a player would use.
+        // A hero being commanded (Active on our side)? At the WHAT beat, tap its first live action card
+        // (verb / hold); while AIMING there are no cards, so tap a lit enemy - the same tap a player uses to
+        // complete the strike.
         let has_active = tiles
             .iter()
             .any(|t| t.team == Team::Left && t.highlight == Highlight::Active);
         if has_active {
-            if let Some(t) = scene.actions.iter().find(|t| t.tappable)
-                && let Some(intent) = game.tap_intention(&board, t.card)
+            let pick = scene
+                .actions
+                .iter()
+                .find(|t| t.tappable)
+                .map(|t| t.card)
+                .or_else(|| {
+                    // Aiming: a lit, tappable enemy completes the strike.
+                    tiles
+                        .iter()
+                        .find(|t| t.team == Team::Right && t.tappable)
+                        .map(|t| t.card)
+                });
+            if let Some(card) = pick
+                && let Some(intent) = game.tap_intention(&board, card)
             {
                 game.apply(&mut board, &[intent]);
             }

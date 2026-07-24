@@ -344,9 +344,15 @@ impl Scene {
                 Team::Left => "yours",
                 Team::Right => "theirs",
             };
+            let outlook = match t.outlook {
+                Outlook::Winnable => "  [winnable]",
+                Outlook::Doomed => "  [doomed]",
+                Outlook::Evaluating => "  [evaluating]",
+                Outlook::Unknown => "",
+            };
             let badges: Vec<&str> = t.badges.iter().map(|b| b.text.as_str()).collect();
             out.push_str(&format!(
-                "    {:<14} ({side})  {}
+                "    {:<14} ({side})  {}{outlook}
                        {}
     ",
                 t.title,

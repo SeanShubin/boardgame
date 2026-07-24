@@ -42,7 +42,7 @@ pub fn scene(board: &Board, _focus: PileId) -> Option<Scene> {
     } else if let Some(f) = w.focus {
         let name = &w.units[f].name;
         if w.aiming {
-            format!("{name}: TARGETING - click a lit enemy, or a card below.")
+            format!("{name}: TARGETING - click a lit enemy, or tap {name} again to back out.")
         } else {
             format!("{name}: CHOOSE AN ORDER - one of the cards below.")
         }
@@ -416,15 +416,13 @@ fn build_actions(board: &Board, arena: PileId) -> Vec<Tile> {
         .into_iter()
         .enumerate()
         .map(|(i, (choice, action))| {
+            let _ = action;
             let barred = !choice.enabled();
             let highlight = if barred {
                 Highlight::Dim
             } else if choice.chosen {
                 // The staged pick reads "decided" - the same settled cue an ordered body wears.
                 Highlight::Settled
-            } else if action == arena::ChoiceAction::CancelAim {
-                // The way out of the gesture is a steady offer, not a ringed "do this next".
-                Highlight::Available
             } else {
                 // A live pick that advances the gesture wears the ring - the same invitation the WHO heroes
                 // and the WHOM targets carry.
