@@ -1052,29 +1052,18 @@ pub(crate) fn step_choices(board: &Board, arena: PileId) -> Vec<(Choice, ChoiceA
             ));
         }
         _ => {
-            // The WHAT: begin the strike (entering targeting - the ringed targets complete it), or hold. The
-            // label is the CHOICE you are making, not the step's name - what you do is the same at every step;
-            // only its object changes (a single striker aims at a target, an area striker at an area).
+            // The WHAT: begin the strike (entering targeting - the ringed tiles complete it), or hold. Just
+            // the reach COUNT on the strike card - the ringed tiles already show which, and the log carries
+            // the damage math once it happens; Hold needs no gloss, the word says it and the outlook scores
+            // it. (The "a line strike bars crossing" rule the old text carried lives in the step prompt.)
             let n = w.targets.len();
-            let (article, what) = if w.units[i].aoe {
-                ("an", "area")
-            } else {
-                ("a", "target")
-            };
             out.push((
-                Choice::new(
-                    "Strike...",
-                    format!("pick {article} {what}: {n} in reach - they light up on the board"),
-                )
-                .chosen(matches!(w.staged[i], Some(Staged::Aim(_)))),
+                Choice::new("Strike...", format!("{n} in reach"))
+                    .chosen(matches!(w.staged[i], Some(Staged::Aim(_)))),
                 ChoiceAction::BeginAim,
             ));
             out.push((
-                Choice::new(
-                    "Hold",
-                    "keep your tempo for a later step - or for the crossing (a line strike bars it)",
-                )
-                .chosen(w.staged[i] == Some(Staged::Hold)),
+                Choice::new("Hold", "").chosen(w.staged[i] == Some(Staged::Hold)),
                 ChoiceAction::Stage(Staged::Hold),
             ));
         }
