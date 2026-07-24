@@ -2883,8 +2883,20 @@ fn animate_target_rings(
     for (cn, gt) in &pulse {
         spawn_ring_dots(&mut commands, node_rect(cn, gt), phase);
     }
+    // A **blast group**: one ring around the combined bounds of the whole set, so it reads as a single thing
+    // struck together (an area of effect), not several targets to choose among.
+    let blast_union = scene
+        .blast
+        .iter()
+        .filter_map(|c| rects.0.get(c).copied())
+        .reduce(|a, b| a.union(b));
+    if let Some(union) = blast_union {
+        spawn_ring_dots(&mut commands, union, phase);
+    }
+    // Individual rings for every Targeted tile EXCEPT the blast members (they are enclosed by the group ring).
     let mut ring = |tile: &Tile| {
         if tile.highlight == Highlight::Targeted
+            && !scene.blast.contains(&tile.card)
             && let Some(rect) = rects.0.get(&tile.card)
         {
             spawn_ring_dots(&mut commands, *rect, phase);

@@ -184,6 +184,7 @@ fn demo_scene() -> Scene {
             left: all,
             right: vec![],
         }]),
+        blast: vec![],
         links: vec![
             // The locked part of the chain flows green (confirmed).
             Link {

@@ -27,6 +27,11 @@ pub struct Scene {
     /// arrows. What the association *means* (a target, a link, a pairing) is the game's business, not the
     /// renderer's.
     pub links: Vec<Link>,
+    /// A **group of cards to enclose in ONE animated ring** - "these belong together as a single thing right
+    /// now" (a game reads it as an area-of-effect blast: all struck at once, not a menu to choose among). The
+    /// renderer draws a single rotating ring around their combined bounds instead of a ring per card, so the
+    /// set reads as one selection, not several. Empty = no group ring.
+    pub blast: Vec<CardId>,
     /// The **decision the game is asking for right now** — its options, drawn as small cards just above the
     /// [`log`](Scene::log), each carrying its own consequence. Empty = the game is asking nothing.
     ///
@@ -430,6 +435,20 @@ impl Scene {
                     name(l.to),
                 ));
             }
+        }
+
+        if !self.blast.is_empty() {
+            let members: Vec<String> = self
+                .blast
+                .iter()
+                .map(|c| names.get(c).cloned().unwrap_or_else(|| format!("#{}", c.0)))
+                .collect();
+            out.push_str(&format!(
+                "
+    BLAST (one ring around the group, struck together): {}
+    ",
+                members.join(", ")
+            ));
         }
 
         if !self.actions.is_empty() {

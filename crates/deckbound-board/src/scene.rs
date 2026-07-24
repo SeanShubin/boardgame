@@ -77,12 +77,21 @@ pub fn scene(board: &Board, _focus: PileId) -> Option<Scene> {
     // and can be an arrow endpoint, so the WHAT beat is the same card vocabulary as the WHO and WHOM beats.
     let actions = build_actions(board, arena);
 
+    // An AREA striker's lit slice is ONE blast, not a menu: enclose it in a single ring (the tiles keep their
+    // lit look, but the group reads as one selection struck together, not several targets to choose among).
+    let blast: Vec<cardtable_model::CardId> = w
+        .focus
+        .filter(|&f| w.aiming && w.units[f].aoe)
+        .map(|f| w.footprints[f].iter().map(|&m| w.cards[m]).collect())
+        .unwrap_or_default();
+
     Some(Scene {
         tracks,
         heading,
         prompt,
         body: SceneBody::Lanes(lanes),
         links,
+        blast,
         choices: Vec::new(),
         actions,
         log_title,
