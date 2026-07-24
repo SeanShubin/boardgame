@@ -473,7 +473,7 @@ pub const ENCOUNTERS: [Encounter; 9] = [
         keystone: "The Sniper",
         party: true,
         behavior: Some(Behavior::Raid),
-        foes: &[("The Wall", 4), ("The Sniper", 1)],
+        foes: &[("The Wall", 3), ("The Sniper", 1)],
     },
     // --- the centre: the capstone, every strategy at once (the graduation exam) --------------------
     Encounter {

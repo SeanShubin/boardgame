@@ -27,8 +27,9 @@ use crate::core::{Game, Outcome, Solvable};
 /// The eight steps of a round, in schedule order.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum Step {
-    /// Step 1: havoc - prior-round outriders trade with their hosts in-region, no screen; an outrider strikes
-    /// the enemy rearguard it crossed to reach (not the vanguard it slipped past).
+    /// Step 1: havoc - prior-round outriders trade point-blank with their hosts in-region, no screen, mutual;
+    /// each aims one tier (the vanguard it is tangled with or the rearguard it crossed to), an area sweep
+    /// catching only that aimed tier.
     Havoc,
     /// Step 2: outriders may withdraw to their own line, free - step 1 was the price.
     Withdraw,
@@ -272,9 +273,9 @@ impl StepState {
         if !b.units[i].aoe {
             return reachable;
         }
-        // The slice an area strike catches is a tier (rank + region) - EVERY step, now that an outrider's Havoc
-        // sweep is the rearguard tier, not the whole region. Two targets in the same tier are the same strike;
-        // keep the lowest-index representative of each.
+        // The slice an area strike catches is a tier (rank + region) - EVERY step. An outrider's Havoc strike
+        // aims one tier too (the vanguard it is tangled with or the rearguard it crossed to), never both, so two
+        // targets in the same tier are the same strike; keep the lowest-index representative of each.
         reachable
             .iter()
             .copied()
@@ -311,13 +312,12 @@ impl StepState {
     fn reaches(&self, i: usize, t: usize) -> bool {
         let b = &self.board;
         match self.step {
-            // In-region trade. An OUTRIDER is past the enemy screen, in the backfield: it strikes only the
-            // REARGUARD it crossed to reach, never the vanguard it slipped past (which the front-trade steps
-            // handle). A host (vanguard/rearguard) strikes the intruding outrider as before.
-            Step::Havoc => {
-                b.regions[i] == b.regions[t]
-                    && (b.ranks[i] != Rank::Outrider || b.ranks[t] == Rank::Rearguard)
-            }
+            // In-region point-blank trade, mutual and unscreened: everyone present may strike anyone on the far
+            // side of their region. An OUTRIDER aims ONE tier - the vanguard it is tangled with or the rearguard
+            // it crossed to reach (an area strike sweeps only that aimed tier, never both) - and its hosts strike
+            // it back the same way. Symmetric on purpose: it can hit the vanguard exactly because the vanguard
+            // can hit it.
+            Step::Havoc => b.regions[i] == b.regions[t],
             Step::Skirmish => b.ranks[i] == Rank::Vanguard && b.ranks[t] == Rank::Vanguard,
             Step::Volley => b.ranks[i] == Rank::Rearguard && b.ranks[t] == Rank::Outrider,
             Step::Raid => {

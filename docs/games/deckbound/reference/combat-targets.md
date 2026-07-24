@@ -14,7 +14,7 @@ trades both ways because both declared; a ranged shot is one-way.
 
 | #   | Step             | Attacker  | Reach  | Target               | Answerable | Condition                                                                             |
 | --- | ---------------- | --------- | ------ | -------------------- | ---------- | ------------------------------------------------------------------------------------- |
-| 1   | Havoc            | Outrider  | weapon | anyone in its region | yes        | point-blank: both tiers, no screen; its hosts strike back in the same wave            |
+| 1   | Havoc            | Outrider  | weapon | anyone in its region | yes        | point-blank: aims one tier (vanguard or rearguard), no screen; its hosts strike back  |
 | 3   | Skirmish         | Vanguard  | melee  | Vanguard             | yes        | the early trade; a line strike here bars your own crossing this round                 |
 | 5   | Defensive Volley | Rearguard | ranged | Outrider             | no         | one-way, the opening blow only                                                        |
 | 6   | Raid             | Outrider  | melee  | Rearguard            | no         | this round's arrivals only, in the region they landed in; opening blow only, evadable |

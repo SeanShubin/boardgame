@@ -9,7 +9,7 @@
 //!
 //! | # | who -> whom | resolution |
 //! |---|---|---|
-//! | 1 | O->R, RV->O | in-region, no screen, mutual; an outrider hits the rearguard it crossed to reach; pours |
+//! | 1 | O<->VR | in-region, no screen, mutual; an outrider aims one tier (the vanguard or the rearguard); pours |
 //! | 2 | O -> V | withdraw, free - step 1 was the price |
 //! | 3 | V->V | the EARLY front trade / interception window; pours |
 //! | 4 | V -> O | the crossing: only a vanguard that declared NO line strike this round; uncontested walk |
@@ -102,14 +102,11 @@ fn valid(board: &Board, list: &[Attack], ok: impl Fn(usize, usize) -> bool) -> V
         .collect()
 }
 
-/// **Step 1 - the inner brawl**: in-region, no screen, mutual. An OUTRIDER strikes only the enemy REARGUARD
-/// it crossed to reach (a sweep catches that tier, not the whole region); a host strikes the intruding
-/// outrider. Then outriders of a wiped host dissolve at the boundary.
+/// **Step 1 - the inner brawl**: in-region, no screen, mutual - everyone present trades with the far side of
+/// their region. An OUTRIDER aims one tier (an area strike sweeps that aimed tier, not both); a host strikes
+/// the intruding outrider. Then outriders of a wiped host dissolve at the boundary.
 pub fn resolve_havoc(board: &mut Board, attacks: &[Attack]) -> Option<StepLog> {
-    let inner = valid(board, attacks, |a, t| {
-        board.regions[a] == board.regions[t]
-            && (board.ranks[a] != Rank::Outrider || board.ranks[t] == Rank::Rearguard)
-    });
+    let inner = valid(board, attacks, |a, t| board.regions[a] == board.regions[t]);
     let mut lg = step(board, "Step 1: Havoc", inner, true, false);
     dissolve(board);
     // Dissolution moves bodies at this boundary; fold it into the step's snapshot so the transcript reads it here.

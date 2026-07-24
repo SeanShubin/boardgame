@@ -36,7 +36,7 @@ pub fn rows() -> Vec<TargetRow> {
             attacker: "Outrider",
             target: "anyone in its region",
             reach: "weapon",
-            condition: "point-blank: both tiers, no screen; its hosts strike back in the same wave",
+            condition: "point-blank: aims one tier (vanguard or rearguard), no screen; its hosts strike back",
             answerable: true,
         },
         TargetRow {

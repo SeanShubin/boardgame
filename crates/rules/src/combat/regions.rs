@@ -274,8 +274,10 @@ pub fn wants_to_cross(board: &Board, i: usize) -> bool {
 }
 
 /// **The catch instinct** - which enemy crosser (or, generally, which candidate) this body strikes: the pick
-/// with the top `(downs, flips)` yield, lowest index breaking ties. `None` when the list is empty (or this body
-/// cannot strike at all).
+/// with the top `(downs, flips)` yield, lowest index breaking ties. `None` when the list is empty, this body
+/// cannot strike at all, **or nothing in reach can be hurt** - the best yield is a wasted `(0, 0)`, so the
+/// greedy passes rather than throw a strike that accomplishes nothing (sub-Grit damage is discarded, buying
+/// neither a down nor a flip; a body that swings at what it cannot dent only squanders the tempo).
 pub fn foe_catch(board: &Board, catcher: usize, crossers: &[usize]) -> Option<usize> {
     let u = &board.units[catcher];
     if u.fallen || (!u.melee && !u.ranged) {
@@ -289,6 +291,7 @@ pub fn foe_catch(board: &Board, catcher: usize, crossers: &[usize]) -> Option<us
             let (downs, flips) = strike_yield(board, catcher, m);
             (downs, flips, std::cmp::Reverse(m))
         })
+        .filter(|&m| strike_yield(board, catcher, m) != (0, 0))
 }
 
 // ---- resolution ----------------------------------------------------------------------------------------
@@ -1070,6 +1073,25 @@ mod tests {
             foe_catch(&b, 0, &[1, 2]),
             Some(2),
             "the one it can DOWN beats the one it can only dent"
+        );
+    }
+
+    /// A strike that flips nothing is not worth throwing: `foe_catch` passes (`None`) rather than spend a turn
+    /// on a body its Might cannot dent, since the sub-Grit damage is discarded either way. This is what stops a
+    /// decoy from farming a free pin off an enemy swinging at what it cannot hurt.
+    #[test]
+    fn foe_catch_passes_when_nothing_can_be_hurt() {
+        let b = Board::new(
+            vec![
+                unit("Gnat", Side::Foe, [1, 4, 1, 2, 2], true, false),
+                unit("Wall", Side::Party, [1, 4, 6, 2, 2], true, false),
+            ],
+            vec![0, 1],
+        );
+        assert_eq!(
+            foe_catch(&b, 0, &[1]),
+            None,
+            "Might 1 into Grit 6 flips nothing - do not waste the strike"
         );
     }
 

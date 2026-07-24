@@ -150,7 +150,9 @@ fn build_tracks(step: Step) -> Vec<Track> {
 /// lands an outrider; Advance names the exposed target).
 fn prompt_for(step: Step) -> &'static str {
     match step {
-        Step::Havoc => "Strike the exposed rearguard with the outriders already behind their line.",
+        Step::Havoc => {
+            "Strike with the outriders already behind their line - hit either tier they are tangled with."
+        }
         Step::Withdraw => "Pull your forward outriders home, or leave them out to keep striking.",
         Step::Skirmish => {
             "Strike the enemies about to cross; hold any of yours you mean to send across."
