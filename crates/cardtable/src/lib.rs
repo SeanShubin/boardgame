@@ -1397,9 +1397,9 @@ fn nearest_row_pile(
         .map(|(id, _)| id)
 }
 
-/// The other projected card the release cursor landed on (the equip target), by logical-px hit-test. Needed
-/// because the dragged fan tile follows the cursor and occludes the picking hit-test.
-fn projected_card_under_cursor(
+/// The topmost card (other than the dragged one) whose box contains `cursor` - the drop target when the
+/// dragged tile occludes picking, so the release target must be found by geometry rather than the pick hit.
+fn card_under_cursor(
     cursor: Vec2,
     dragged: CardId,
     geom: &Query<(&Movable, &ComputedNode, &UiGlobalTransform)>,
@@ -1543,18 +1543,17 @@ fn on_node_drag_end(
             rebuild.0 = true;
             return;
         }
-        // Projection (the inn): a hero/kit dropped onto its counterpart equips. The target is the projected
-        // card the release cursor landed on (the dragged tile occludes the pick, so hit-test by geometry).
-        if table
-            .0
-            .pile(table.0.focus_id())
-            .is_some_and(|p| !p.projection().is_empty())
+        // A card dropped onto another card that ACCEPTS it - the target's pair_key matched by the dragged
+        // card's pairings ([`can_drop_on_card`]): seating a hero on a solo encounter, and formerly the Inn's
+        // equip. The dragged tile cursor-follows and occludes picking, so hit-test the target by geometry -
+        // the topmost card under the release cursor the drop is legal for. No match falls through to a plain
+        // reposition, so an ordinary drag onto empty felt (or a card that rejects it) still just repositions.
+        let cursor = on.event().pointer_location.position;
+        if let Some(target) =
+            card_under_cursor(cursor, card, &geom).filter(|&t| can_drop_on_card(&table.0, card, t))
         {
-            let cursor = on.event().pointer_location.position;
-            if let Some(target) = projected_card_under_cursor(cursor, card, &geom) {
-                drop_request.0 = Some((card, DropTarget::Card(target)));
-            }
-            rebuild.0 = true; // snap the dragged card back to its projected slot (or show the new deck)
+            drop_request.0 = Some((card, DropTarget::Card(target)));
+            rebuild.0 = true;
             return;
         }
         // No game path applied: the card stays in its home pile (reposition / reorder), traced.
