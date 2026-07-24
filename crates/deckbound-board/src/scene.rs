@@ -221,49 +221,13 @@ fn build_lanes(
         });
     }
 
-    // Targeting arrows. A committed aim is a solid arrow, an offered one dotted; while a body aims, every
-    // other body's committed arrow is muted so the gesture in progress owns the screen. A SINGLE strike is
-    // one arrow to its target; an AREA strike fans one arrow to every body in its footprint - the whole slice
-    // it sweeps - so the extent shows on the board, not just the representative the choices collapsed to.
-    let aiming_focus = if w.aiming { w.focus } else { None };
-    let mut links = Vec::new();
-    let push_strike = |links: &mut Vec<Link>, from: usize, to: usize, confirmed: bool| {
-        links.push(Link {
-            from: w.cards[from],
-            to: w.cards[to],
-            confirmed,
-            broad: false,
-            muted: aiming_focus.is_some_and(|f| f != from),
-        });
-    };
-    // Committed aims.
-    for i in 0..w.units.len() {
-        let Some(Staged::Aim(t)) = w.staged[i] else {
-            continue;
-        };
-        if w.units[i].aoe {
-            for m in w.footprints[i].clone() {
-                push_strike(&mut links, i, m, true);
-            }
-        } else if let Some(t) = w.cards.iter().position(|&c| c == t) {
-            push_strike(&mut links, i, t, true);
-        }
-    }
-    // The aiming body's offer: one arrow per body its strike would reach (its whole footprint). Capped so a
-    // wide reach never turns the board into a hairball (past the cap the lit tiles and cards carry the offer).
-    if let Some(f) = aiming_focus
-        && w.footprints[f].len() <= OFFERED_ARROW_CAP
-    {
-        for m in w.footprints[f].clone() {
-            push_strike(&mut links, f, m, false);
-        }
-    }
+    // **No connector dots between cards.** The targeting offer is the RING - a rotating dotted BORDER - on
+    // each lit enemy (see `sel_of`); a committed aim reads off the striker's "ordered ->" line plus its
+    // target's own highlight. A flowing line between two cards said the same thing more noisily, so it is
+    // retired.
+    let links: Vec<Link> = Vec::new();
     (lanes, links)
 }
-
-/// The most candidate arrows worth drawing at once. Past this, the offered arrows would read as a tangle, so
-/// the ringed cards carry the offer instead.
-const OFFERED_ARROW_CAP: usize = 8;
 
 /// The attention state of combatant `i` this wave. A body reads in one of a few states, the same at every
 /// step: **Dim** = nothing is being asked of it; **Available** = it owes an order (or is a legal target);
@@ -293,10 +257,18 @@ fn sel_of(w: &arena::Wave, i: usize) -> Highlight {
             Highlight::Available
         };
     }
-    // A foe lights up when a strike will reach it. A COMMITTED strike (a staged aim) that catches it reads
-    // Active - its fate is decided. The AIMING body's footprint reads Available (lit, tappable - the live
-    // offer; the ring lives on the action card now). "Catches it" is the whole slice for an area strike, just
-    // the named body for a single one - so an area strike lights its whole extent, not just the representative.
+    // A foe lights up when a strike will reach it:
+    // - the AIMING body's footprint wears the RING (a rotating dotted border) - "tap me to strike" - the
+    //   whole slice for an area strike, just the named body for a single one;
+    // - a COMMITTED strike (a staged aim) that catches it reads Active: its fate is decided.
+    // Aiming wins the tie, so the enemy you are about to hit invites the tap even if another body already
+    // committed to it.
+    if let Some(f) = w.focus
+        && w.aiming
+        && w.footprints[f].contains(&i)
+    {
+        return Highlight::Targeted;
+    }
     let committed = (0..w.units.len()).any(|j| match w.staged[j] {
         Some(Staged::Aim(t)) => {
             if w.units[j].aoe {
@@ -309,12 +281,6 @@ fn sel_of(w: &arena::Wave, i: usize) -> Highlight {
     });
     if committed {
         return Highlight::Active;
-    }
-    if let Some(f) = w.focus
-        && w.aiming
-        && w.footprints[f].contains(&i)
-    {
-        return Highlight::Available;
     }
     Highlight::Idle
 }
