@@ -340,6 +340,13 @@ pub fn sample_table() -> Board {
             // keystone creature; a corner fields all four with the keystone doubled.
             let header = typed(&mut tree, place_pile, enc.title, "encounter");
             let mut detail = vec![enc.flavor.to_string()];
+            // Say the cell's rule outright, so "one hero" is read, not learned by surprise: a solo seats a
+            // single hero (a second swaps in), a party fight musters the whole band.
+            detail.push(if enc.party {
+                "Party fight - muster the whole band here.".to_string()
+            } else {
+                "Solo - one hero holds this cell; drop a second and it swaps in.".to_string()
+            });
             let foes: Vec<String> = catalog::encounter_foes(enc)
                 .iter()
                 .map(|(c, q)| {

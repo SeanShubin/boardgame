@@ -338,9 +338,36 @@ fn unequip(board: &mut Board, label: CardId) {
 }
 
 fn march(board: &mut Board, position: CardId, to: PileId) {
-    if let Some(progress) = top_deck(board, "Progress") {
-        let _ = board.move_character(position, to, progress);
+    let Some(progress) = top_deck(board, "Progress") else {
+        return;
+    };
+    // A solo cell seats exactly ONE hero. Marching a second one in SWAPS: the resident is displaced to the
+    // newcomer's origin cell first - a plain relocation, no day spent, since it did not choose to move - then
+    // the newcomer marches in normally. This is what enforces "one hero per adjacent solo": the cell can
+    // never hold two, so a lone puzzle stays a lone puzzle.
+    if is_solo_cell(board, to) {
+        let origin = board.card(position).map(|c| c.home());
+        let resident = board
+            .content_cards(to)
+            .into_iter()
+            .find(|&c| c != position && board.card(c).map(|k| k.card_type()) == Some("hero"));
+        if let (Some(origin), Some(resident)) = (origin, resident) {
+            let at = board.pile(origin).map_or(0, |p| p.cards().len());
+            let _ = board.move_card(resident, origin, at);
+        }
     }
+    let _ = board.move_character(position, to, progress);
+}
+
+/// Whether `place` is a **solo cell** - a home-adjacent location whose encounter is a lone fight, not a party
+/// fight. Read from the encounter's `party` flag so the one-hero rule and the cell's own label share a single
+/// source of truth. Party cells (the corners and the capstone) muster the whole band and are not capped.
+fn is_solo_cell(board: &Board, place: PileId) -> bool {
+    board
+        .pile(place)
+        .map(|p| p.label.clone())
+        .and_then(|label| deckbound_content::catalog::encounter_for(&label))
+        .is_some_and(|e| !e.party)
 }
 
 fn advance_day(board: &mut Board) {
@@ -551,6 +578,61 @@ mod tests {
         assert!(
             card_in(&board, dest, "Marksman").is_some(),
             "the position arrived at the destination"
+        );
+    }
+
+    /// A **solo cell holds one hero**: marching a second in swaps the resident back to the newcomer's origin,
+    /// so a lone puzzle can never be ganged up on. (Party cells - the corners - are not capped.)
+    #[test]
+    fn a_solo_cell_swaps_rather_than_stacking_heroes() {
+        let game = CardTableGame::default();
+        let mut board = game.opening();
+        let locations = top_deck(&board, "Locations").unwrap();
+        let home = board.pile(locations).unwrap().subpiles()[4]; // Ashfen (centre)
+        let solo = board.pile(locations).unwrap().subpiles()[1]; // Cinderwatch Keep, an orthogonal solo
+
+        // March the first hero into the solo.
+        let a = card_in(&board, home, "Marksman").expect("the Marksman starts at home");
+        game.apply(
+            &mut board,
+            &[Intention::March {
+                position: a,
+                to: solo,
+            }],
+        );
+        assert!(
+            card_in(&board, solo, "Marksman").is_some(),
+            "the first hero holds the solo"
+        );
+
+        // March a second hero in: it swaps, the resident returns to the newcomer's origin (home).
+        let b = card_in(&board, home, "Raider").expect("the Raider starts at home");
+        game.apply(
+            &mut board,
+            &[Intention::March {
+                position: b,
+                to: solo,
+            }],
+        );
+
+        let heroes_at_solo: Vec<String> = board
+            .content_cards(solo)
+            .into_iter()
+            .filter_map(|c| {
+                board
+                    .card(c)
+                    .filter(|k| k.card_type() == "hero")
+                    .map(|k| k.front_title().to_string())
+            })
+            .collect();
+        assert_eq!(
+            heroes_at_solo,
+            vec!["Raider".to_string()],
+            "the solo holds exactly the newcomer - never two"
+        );
+        assert!(
+            card_in(&board, home, "Marksman").is_some(),
+            "the displaced resident is back at the origin cell"
         );
     }
 }
