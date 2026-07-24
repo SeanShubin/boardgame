@@ -110,43 +110,89 @@ const LOCATIONS: [&str; 9] = [
 // The authored adventurer names (Name Bank § Adventurers) are gone: a hero *is* its kit now, so the party is
 // named for the four kits in `catalog::ROSTER` (Raider / Marksman / Bastion / Bombardier). See the Inn removal.
 
-/// A one-line summary for each of the round's eight phases, **aligned to [`STEPS`]** order. The phase NAMES
-/// and ORDER come from the engine (`step_game::STEPS` / `step_coord`), so the Rules deck can only ever name a
-/// phase the machine actually runs; only this prose lives here. (Length is asserted to match `STEPS`.)
-const PHASE_BLURB: [&str; 8] = [
+/// A short summary for each of the round's eight phases, **aligned to [`STEPS`]** order. The phase NAMES and
+/// ORDER come from the engine (`step_game::STEPS` / `step_coord`), so the Rules deck can only ever name a
+/// phase the machine actually runs; only this prose lives here. Each string is **one rendered line**, kept
+/// short enough to fit a Medium card's `MEDIUM_W` width (no wrap - a long line would clip), so a multi-line
+/// summary is a slice of short lines, not one long line.
+const PHASE_BLURB: [&[&str]; 8] = [
     // 1 Havoc
-    "Point-blank and in-region, mutual: prior-round outriders and their hosts trade. Each outrider aims one tier - the vanguard it is tangled with or the rearguard it crossed to reach.",
+    &[
+        "Point-blank in-region trade.",
+        "Outriders aim one tier;",
+        "their hosts strike back.",
+    ],
     // 2 Withdraw
-    "A surviving outrider may rejoin its own line, free - standing the Havoc was the price.",
+    &["An outrider may rejoin", "its own line, free."],
     // 3 Skirmish
-    "The early front trade, vanguard on vanguard. A line strike here bars your own crossing this round.",
+    &[
+        "The early front trade,",
+        "vanguard vs vanguard.",
+        "A line strike bars",
+        "your own crossing.",
+    ],
     // 4 Crossing
-    "A vanguard that declared no line strike may walk into their line, uncontested, landing as an outrider.",
+    &[
+        "A vanguard that did not",
+        "strike may cross into",
+        "their line as an outrider.",
+    ],
     // 5 Defensive Volley
-    "Rearguards fire on the enemy outriders in their zone - one-way, the opening blow only.",
+    &[
+        "Rearguards fire on enemy",
+        "outriders in their zone.",
+        "One-way, opening blow only.",
+    ],
     // 6 Raid
-    "This round's fresh arrivals strike a back-line target - the opening blow only, and it may still dodge.",
+    &[
+        "This round's arrivals",
+        "strike a back-line target.",
+        "Opening blow only, evadable.",
+    ],
     // 7 Assault
-    "All firepower to bear: rearguard fire, and every vanguard that held back swings here.",
+    &[
+        "All firepower to bear:",
+        "rearguard fire, and every",
+        "vanguard that held back.",
+    ],
     // 8 Advance
-    "Reach an enemy rearguard only when its vanguard is already gone BY this step - the same-round advance on a collapsed front.",
+    &[
+        "Reach an enemy rearguard",
+        "only when its vanguard is",
+        "already gone this step.",
+    ],
 ];
 
 /// The four minor steps every strike runs, inside any phase - the **Interaction**. The Rules deck renders
-/// these as a drill-in sub-deck so the round schedule and the per-strike resolution are both explained.
-const INTERACTION: [(&str, &str); 4] = [
-    ("Target", "Name whom you strike, or pass."),
+/// these as a drill-in sub-deck so the round schedule and the per-strike resolution are both explained. Each
+/// detail string is one rendered line (see [`PHASE_BLURB`]), kept short to fit the card width.
+const INTERACTION: [(&str, &[&str]); 4] = [
+    ("Target", &["Name whom you strike,", "or pass."]),
     (
         "Bid",
-        "The reach contest: tempo flipped at Finesse against the target's dodge. Committing more only prices out the slip - it never buys more damage.",
+        &[
+            "Flip tempo at Finesse to",
+            "reach; the target may slip.",
+            "More cards price out the",
+            "slip, never add damage.",
+        ],
     ),
     (
         "Strike",
-        "The free opening blow, plus one more strike per poured tempo card, at Might each.",
+        &[
+            "The free opening blow,",
+            "plus one per poured tempo,",
+            "at Might each.",
+        ],
     ),
     (
         "Resolve",
-        "Damage applies: Health flips one card per Grit crossed, the damage pool wipes, and a body emptied is downed.",
+        &[
+            "Damage applies: Health",
+            "flips one card per Grit.",
+            "The pool wipes; an emptied",
+            "body is downed.",
+        ],
     ),
 ];
 
@@ -375,7 +421,7 @@ pub fn sample_table() -> Board {
     for (s, blurb) in STEPS.into_iter().zip(PHASE_BLURB) {
         let (k, name) = step_coord(s);
         let id = typed(&mut tree, rules, &format!("{k}. {name}"), "phase");
-        tree.set_card_detail(id, vec![blurb.to_string()])
+        tree.set_card_detail(id, blurb.iter().map(|l| l.to_string()).collect())
             .expect("phase card");
     }
     // The Interaction: drill in to see the four minor steps a single strike runs, in any phase.
@@ -387,7 +433,7 @@ pub fn sample_table() -> Board {
             &format!("{}. {name}", i + 1),
             "phase",
         );
-        tree.set_card_detail(id, vec![detail.to_string()])
+        tree.set_card_detail(id, detail.iter().map(|l| l.to_string()).collect())
             .expect("interaction card");
     }
     let interaction_zone = typed(&mut tree, interaction, "Interaction", "phase");
@@ -395,7 +441,10 @@ pub fn sample_table() -> Board {
         .expect("interaction label");
     tree.set_card_detail(
         interaction_zone,
-        vec!["Every strike, in any phase, runs these four minor steps.".into()],
+        vec![
+            "Every strike runs these".into(),
+            "four minor steps, in order.".into(),
+        ],
     )
     .expect("interaction detail");
     grid_layout(&mut tree, interaction, 2);
