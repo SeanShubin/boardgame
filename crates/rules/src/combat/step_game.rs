@@ -27,7 +27,8 @@ use crate::core::{Game, Outcome, Solvable};
 /// The eight steps of a round, in schedule order.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum Step {
-    /// Step 1: havoc - prior-round outriders and their hosts trade in-region, both tiers, no screen.
+    /// Step 1: havoc - prior-round outriders trade with their hosts in-region, no screen; an outrider strikes
+    /// the enemy rearguard it crossed to reach (not the vanguard it slipped past).
     Havoc,
     /// Step 2: outriders may withdraw to their own line, free - step 1 was the price.
     Withdraw,
@@ -248,9 +249,9 @@ impl StepState {
     }
 
     /// **Every enemy `i` can strike this step**, no dedup and no slice collapse - the raw reach. For an area
-    /// striker this IS the area its strike catches (the reach rule and the slice rule pick out the same tier,
-    /// both tiers at Havoc), so it doubles as the FOOTPRINT the UI lights up; for a single striker it is just
-    /// the list of individual targets.
+    /// striker this IS the area its strike catches (the reach rule and the slice rule pick out the same tier),
+    /// so it doubles as the FOOTPRINT the UI lights up; for a single striker it is just the list of individual
+    /// targets.
     pub fn reachable(&self, i: usize) -> Vec<usize> {
         let b = &self.board;
         (0..b.units.len())
@@ -271,19 +272,16 @@ impl StepState {
         if !b.units[i].aoe {
             return reachable;
         }
-        // The slice an area strike catches is a tier (rank + region) - except the melee sweep at Havoc, which
-        // takes BOTH tiers, so there the slice is the whole region. Two targets in the same slice are the
-        // same strike; keep the lowest-index representative of each.
-        let whole_region = matches!(self.step, Step::Havoc);
+        // The slice an area strike catches is a tier (rank + region) - EVERY step, now that an outrider's Havoc
+        // sweep is the rearguard tier, not the whole region. Two targets in the same tier are the same strike;
+        // keep the lowest-index representative of each.
         reachable
             .iter()
             .copied()
             .filter(|&t| {
-                !reachable.iter().any(|&t2| {
-                    t2 < t
-                        && b.regions[t2] == b.regions[t]
-                        && (whole_region || b.ranks[t2] == b.ranks[t])
-                })
+                !reachable
+                    .iter()
+                    .any(|&t2| t2 < t && b.regions[t2] == b.regions[t] && b.ranks[t2] == b.ranks[t])
             })
             .collect()
     }
@@ -313,7 +311,13 @@ impl StepState {
     fn reaches(&self, i: usize, t: usize) -> bool {
         let b = &self.board;
         match self.step {
-            Step::Havoc => b.regions[i] == b.regions[t],
+            // In-region trade. An OUTRIDER is past the enemy screen, in the backfield: it strikes only the
+            // REARGUARD it crossed to reach, never the vanguard it slipped past (which the front-trade steps
+            // handle). A host (vanguard/rearguard) strikes the intruding outrider as before.
+            Step::Havoc => {
+                b.regions[i] == b.regions[t]
+                    && (b.ranks[i] != Rank::Outrider || b.ranks[t] == Rank::Rearguard)
+            }
             Step::Skirmish => b.ranks[i] == Rank::Vanguard && b.ranks[t] == Rank::Vanguard,
             Step::Volley => b.ranks[i] == Rank::Rearguard && b.ranks[t] == Rank::Outrider,
             Step::Raid => {

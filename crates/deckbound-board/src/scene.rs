@@ -144,7 +144,7 @@ fn build_tracks(step: Step) -> Vec<Track> {
 fn prompt_for(step: Step) -> &'static str {
     match step {
         Step::Havoc => {
-            "Havoc - point-blank: outriders and their hosts trade, both tiers, no screen. Declare a target or hold."
+            "Havoc - point-blank: outriders strike the enemy rearguard they crossed to reach, and take fire from their hosts. Declare a target or hold."
         }
         Step::Withdraw => {
             "Withdraw - each outrider may rejoin its own line, free; standing the havoc was the price."
