@@ -64,6 +64,12 @@ fn hero(tree: &mut Board, pile: PileId, name: &str, stats: [u8; 5], ability: &st
     id
 }
 
+/// The pairing key that marks a **solo encounter** as a seat drop-target. A stationed map-position hero
+/// carries a matching entry in its `pairings` (set when the party is dealt, since `equip_character` mints the
+/// position card fresh), so the renderer's generic drop-cue lights the encounter when a hero is dragged over
+/// it. Purely the visual cue - the seat itself is applied by the game's `drop_intention` (`Intention::Seat`).
+const SEAT_KEY: u32 = 0x5EA7;
+
 /// Author a **foe** card for creature `c` (typed `foe`): a Small card (name + type) that grows to show
 /// its derived intention and posture, its five-stat line, and its ability. Both the intention and the
 /// posture are *derived* from the stats + ability (`catalog::creature_intention` / `creature_posture`),
@@ -371,6 +377,11 @@ pub fn sample_table() -> Board {
             // into the battle arena when a fight starts. A solo (a home-adjacent cell) fields its one
             // keystone creature; a corner fields all four with the keystone doubled.
             let header = typed(&mut tree, place_pile, enc.title, "encounter");
+            // A SOLO encounter is a seat drop-target: mark it so a dragged hero glows it (see SEAT_KEY).
+            if !enc.party {
+                tree.set_card_pair_key(header, SEAT_KEY)
+                    .expect("encounter pair key");
+            }
             let mut detail = vec![enc.flavor.to_string()];
             // Say the cell's rule outright, so "one hero" is read, not learned by surprise: a solo seats a
             // single hero (a second swaps in), a party fight musters the whole band.
@@ -586,6 +597,15 @@ pub fn sample_table() -> Board {
             progress,
         )
         .expect("the banks provision the whole starting party");
+    }
+
+    // Give each stationed hero the SEAT pairing so the renderer glows a solo encounter when the hero is
+    // dragged over it. Set here rather than in `hero`, because `equip_character` mints the map-position card
+    // fresh (the reserve copy's pairings do not carry). The pairing rides with the card as it marches.
+    for c in tree.content_cards(ashfen) {
+        if tree.card(c).map(|k| k.card_type()) == Some("hero") {
+            let _ = tree.set_card_pairings(c, vec![(SEAT_KEY, 0)]);
+        }
     }
 
     tree
@@ -1373,6 +1393,40 @@ mod tests {
         assert!(
             t.content_cards(find("Heroes").unwrap()).is_empty(),
             "every hero copy was dealt into the party"
+        );
+
+        // The SEAT drop-cue is wired: a stationed map-position hero carries the seat pairing, a SOLO
+        // encounter is a matching pair_key target (so the renderer glows it when a hero is dragged), and a
+        // PARTY corner is not.
+        let hero_at = |cell: usize| {
+            t.content_cards(locations.subpiles()[cell])
+                .into_iter()
+                .find(|&c| t.card(c).unwrap().card_type() == "hero")
+                .unwrap()
+        };
+        assert!(
+            t.card(hero_at(4))
+                .unwrap()
+                .pairings()
+                .iter()
+                .any(|&(k, _)| k == SEAT_KEY),
+            "a stationed hero carries the seat pairing"
+        );
+        let enc_at = |cell: usize| {
+            t.content_cards(locations.subpiles()[cell])
+                .into_iter()
+                .find(|&c| t.card(c).unwrap().card_type() == "encounter")
+                .unwrap()
+        };
+        assert_eq!(
+            t.card(enc_at(1)).unwrap().pair_key(), // Cinderwatch Keep - a solo
+            Some(SEAT_KEY),
+            "a solo encounter is a seat drop-target"
+        );
+        assert_eq!(
+            t.card(enc_at(0)).unwrap().pair_key(), // The Hollow Rampart - a party corner
+            None,
+            "a party encounter is not a seat drop-target"
         );
     }
 
