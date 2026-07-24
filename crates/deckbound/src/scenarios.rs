@@ -1312,18 +1312,21 @@ mod tests {
         // sub-phase-schedule model: the old "Blind bid" / "Phase 1 / Phase 2" TERMs were retired
         // with the player-phase/foe-phase round; the live Spec defines the declare-intentions /
         // sub-phase-schedule / Tempo-contest terms.)
+        // NOTE (2026-07-24 reorg): the glossary is parsed from the PRODUCT spec (`canon/2-spec`), which was
+        // reorganised to the shipped step-machine combat. Terms of the retired combat model - "Marshal",
+        // "Sub-phase schedule", "The Clash" - were moved out of the spec (to retired-ideas / future-
+        // possibilities), so they no longer parse here. FOLLOW-UP: this demoted sample's encyclopedia should
+        // be re-homed onto its OWN rules (`rules.rs`/`ALL_RULES`) rather than the product spec, since the two
+        // games now have different combat models.
         for term in [
-            "Marshal",
             "Vanguard",
             "Outrider",
             "Rearguard",
-            "Sub-phase schedule",
             "Tempo contest",
             "Cadence",
             "Finesse",
             "Tempo",
             "Trade",
-            "The Clash",
             "Suit",
         ] {
             assert!(
@@ -1345,8 +1348,9 @@ mod tests {
         assert_eq!(powers, 7, "expected 7 generated Powers entries");
         assert_eq!(
             g.len() - powers,
-            21,
-            "expected 21 Spec TERM entries — a marker may have failed to parse"
+            18,
+            "expected 18 Spec TERM entries - a marker may have failed to parse \
+             (was 21 before the 2026-07-24 reorg moved the retired combat model's 3 TERMs out of the spec)"
         );
 
         // Entries are grouped by the sidebar's category order (non-decreasing).

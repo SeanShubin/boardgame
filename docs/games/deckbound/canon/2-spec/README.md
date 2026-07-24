@@ -246,405 +246,12 @@ exists in code; the par-solver that consumes the envelope is the pending build o
 
 ---
 
-## 1. The Clash — *the tactical core* — 🟡 DEFERRED (pluggable)
-
-> **DEFERRED, not retired (clarified 2026-07-24).** The RPS-style Clash (stances / triangle / edge /
-> Parry-steal) is a **pluggable tactical layer, deliberately deferred** until the core deterministic combat is
-> fully working — by intent, to keep balance simple and the foe deterministic (the "greedy is optimal against
-> a deterministic opponent" property depends on there being no hidden RPS mind-game). It is **future work**,
-> not a road not taken. What ships **now** in its place is the deterministic **Interaction**: a strike
-> resolves Target → Bid → Strike → Resolve (a Finesse-weighted tempo-flip reach contest, then Might over the
-> Grit bar). Current combat mechanics: [`combat-round-sequence.md`](../../combat-round-sequence.md); this
-> section moves to `future-possibilities.md` in the reorg.
-
-The atom of combat: two Actors **predicting each other** across a hidden, simultaneous
-mix-up played with cards. Design background:
-[`notes/the-duel.md`](../notes/the-duel.md).
-
-> **History.** This section formerly specced a stance/Edge duel (Marshal · Unleash ·
-> Overwhelm · Parry, tracked Edge) and then an interim six-move *charge* duel. Both are
-> **superseded by §1.0 (The Clash)** below — the four-card, Force-stealing,
-> **ends-on-strike** duel. The old stance/Edge subsections (§1.1–§1.5, §1.8) are kept for
-> design history behind banners; their WHY/GUARANTEES carry forward. §1.3 (ends-on-strike)
-> is **restored** as current; §1.6 is reworded for it; §3 (Tempo/Focus) is rewritten and
-> §3.3 (Exposed) is removed.
-
-> **The Clash is an optional module.** The canonical floor (§4.2) resolves a same-range
-> sub-phase as a **simultaneous trade**; the Clash below *replaces* that trade with a four-card
-> mix-up + Force when a scenario enables it. Everything in §3–§4 (roles, phases, positions,
-> Tempo) runs identically either way.
->
-> **Reconciliation pending (2026-06-20).** This section still uses the old **Focus / Mind** vocabulary
-> (e.g. "reading the foe with Focus unlocks your stance menu"). Those are **merged/removed** — there is
-> one **Tempo** pool now (§3.1), and the Clash is **off in the base game** (the campaign uses the §4.2
-> trade). A full §1 reconciliation (re-expressing the Clash's read/commit layer in Tempo terms, or
-> confirming the Clash keeps its own internal currency) is **deferred** — it is not on the
-> base-combat code path. Where §1 conflicts with §2–§4, **§2–§4 win.**
-
-### 1.0 The Clash — four cards, Force, ends-on-strike
-
-**RULE.** A duel is a sequence of **beats**. Each beat both fighters **secretly choose one
-card** and reveal **simultaneously** — no one reveals first; any "see their card before you
-choose" effect is a special ability, never the core. The duel **ends the instant one or both
-are struck**. The kit is four cards, always complete:
-
-- **Strike** — hit *where they are now*. Beats **Gather**; stopped by **Evade**.
-- **Anticipate** — hit *where they'll be* (lead the target). Beats **Evade**; stopped by
-  **Gather**.
-- **Gather** — *hold your ground* (a defense) **and build Force** (+1). Stops **Anticipate**;
-  beaten by **Strike**.
-- **Evade** — *move*. Stops **Strike**; beaten by **Anticipate**.
-
-**The cycle.** Anticipate ▸ Evade ▸ Strike ▸ Gather ▸ Anticipate (each beats the next), plus
-**Strike > Anticipate** when both attack, **Strike vs Strike → trade** (both hit), and
-**Anticipate vs Anticipate → whiff**.
-
-**Resolution table** (result shown for the row player):
-
-| you ↓ \ them → | **Gather** | **Evade**         | **Strike**                | **Anticipate** |
-| -------------- | ---------- | ----------------- | ------------------------- | -------------- |
-| **Strike**     | you hit    | your Force → them | trade (both hit)          | you hit        |
-| **Anticipate** | —          | you hit           | you're hit                | —              |
-| **Gather**     | +1 Force   | +1 Force          | you're hit                | +1 Force       |
-| **Evade**      | —          | —                 | their Force → you (min 1) | you're hit     |
-
-*Enders* (a strike connected → the duel ends): **you hit / you're hit / trade**. Everything
-else is the **non-connecting dance** — the duel continues and Force builds.
-
-**Force.** A single count per side (no face-down state). Each Force **doubles** the connecting
-hit: damage = `base × 2^Force`, routed through the armor/toughness pipeline (§2). **Gather**
-adds +1. The **only** way Force changes hands is **Strike into Evade**: you commit a Strike,
-they slip it, and your Force **goes to them** — your own momentum turned against you — and the
-evader **always gains at least 1** Force from the slip, even when the Striker had none (a clean
-dodge always buys momentum). Force is
-**per-duel** (it resets each duel); only **health** persists between duels. There is **no Force
-cap** (unlimited) — building is bounded in practice by ends-on-strike (the duel ends the
-instant a blow connects), not by a ceiling. The kit is **infinite-replay**: every card is
-always available each beat (no finite hand or discard yet).
-
-**WHY.** The kit is always complete, so a perfect guesser can always answer the card in front
-of them — that is what makes the reachability invariants hold for a whole duel.
-Ends-on-strike keeps duels short and makes the build-then-land arc tense: you stack Force in
-the dance, but the opponent controls whether your loaded blow ever connects. The single steal
-vector is re-derivable from one idea — *only an active dodge (Evade) of a committed Strike
-reverses; the passive build (Gather) never steals* — and it is the Gandalf-vs-Balrog engine:
-a weak fighter can heist a loaded Strike, but reaching for the win is where the trade kills
-them (north stars #2 computable, #4 asymmetry, #10 re-derivable).
-
-> **Analyze as a counter system.** The Clash is a (Force-weighted) counter system — balance it with the
-> counter-system tools in [`docs/game-theory/`](../../../../game-theory/hierarchy-of-concerns.md)
-> ([measurement-mechanics](../../../../game-theory/measurement-mechanics.md)). And because each beat is a
-> **hidden, simultaneous** commit against an adaptive opponent, equilibrium play *here* is **mixed**
-> ([`solution-concepts.md`](../../../../game-theory/solution-concepts.md) §4) — this is exactly the
-> quarantined mind-game layer the open PvE skeleton (a pure maximizer, §0.1 / §0.4) excludes.
-
-**GUARANTEES** — under perfect guessing (the analytical lens: *"I happened to guess right"*):
-1. **Avoid.** You can pass a duel **un-hit** — every attack has a defense that negates it
-   (Strike↦Evade, Anticipate↦Gather).
-2. **Land.** You can force a connecting hit — every move has an answering attack
-   (Gather↦Strike, Evade↦Anticipate, Strike↦Strike-trade).
-3. **Not both, free.** Landing on a committed Striker means **trading** a hit. *Survival is
-   free; victory costs exposure.* (Whose hits actually land on whom is set by the breadth
-   layer — §3: offense lands, a Focus-defense is reset.)
-- **Termination.** Ends-on-strike resolves duels in practice (blind guesses → someone
-  eventually misreads → a strike connects); the §1.6 backstop only covers the theoretical
-  perfect-mutual-defense edge.
-
-**MANUAL.** *Each beat pick a card: Strike (hit where they are) or Anticipate (where they'll
-go) to attack; Gather to hold your ground and build Force; Evade to dodge. A connecting strike
-ends the duel; slip a Strike with Evade and you steal their Force (always at least 1).*
-
-**Glossary.** *(Encyclopedia terms — the in-app rules reference is generated from these `TERM`
-lines, so it can't drift from this Spec.)*
-
-- **TERM.** `The Clash` (Clash module) — An optional 1v1 mix-up that replaces a same-range trade. Each beat both pick a card and reveal at once: Strike, Anticipate, Gather, Evade.
-- **TERM.** `Cards` (Clash module) — Strike beats Gather; Anticipate beats Evade; Gather beats Anticipate; Evade beats Strike. Strike also beats Anticipate; Strike-vs-Strike trades.
-- **TERM.** `Force` (Clash module) — Gather builds +1 Force; each Force doubles your connecting hit. Evading a Strike steals the striker's Force (always at least 1).
-
-### 1.1 Edge is per-duel, public, all-or-nothing, linear
-
-> **SUPERSEDED by §1.0 (The Clash).** The tracked Edge meter is replaced by **Charges**
-> (durable ×2 cards). The intent below — a *per-duel, public, no-runaway-hoard*
-> escalation resource — carries forward: Charges reset each duel, are face-up, and a
-> defended Charge flips down rather than compounding.
-
-**RULE.** Every duel starts at **0 Edge** for each side. Edge is built and spent
-**inside that duel only** and **does not carry** to any other duel — not even
-between two duels involving the same Actor. Both banks are **public**. Spending
-Edge spends **all of it** (no partial commit). A spent bank of *n* contributes
-exactly *n* (linear).
-
-**WHY.** A per-duel meter is the big simplifier: it removes the cross-round
-hoarding, stalling, and runaway-snowball problems a fight-long meter creates, and
-keeps the tactical exchange small and computable (Charter §2: *computable
-tactics*). Public + all-or-nothing makes it a clean yomi read ("respect the
-meter") rather than a hidden-quantity guessing game. Read intent-first, a
-side's Edge is *the trouble the other side ran into by overextending into the
-clash* — which is why it accrues only inside a mutual sub-phase (§1.8): with no
-one reading you there is no overextension to punish, so no Edge is banked by
-either side. Edge is the price of a contested exchange, never a free resource.
-
-**GUARANTEES.**
-- No fight-long bank exists; breadth never compounds into one mega-bank (a "god"
-  facing many foes is a stack of independent short duels, powerful in each, never
-  one accumulating super-bank).
-- A bank of *n* can never do more than *n* — no one-shot-from-hoarding.
-- Both players can always see the stakes; nothing about Edge is hidden.
-
-### 1.2 The four stances and the triangle
-
-> **SUPERSEDED by §1.0 (The Clash).** The four stances become the **six moves**
-> (Strike/Throw/Parry/Evade + Charge/Recover). The intent below — **no dominant
-> option**, a throw that beats the block so no stance is safe — carries forward as the
-> §1.0 cycle (each attack beats one defense, loses to the other; Throw beats Parry).
-
-**RULE.** Each fighter secretly commits one of **Marshal · Unleash · Overwhelm ·
-Parry**; reveal simultaneously.
-- **Marshal** *(neutral)* — bank Edge; exposed to Unleash.
-- **Unleash** *(strike)* — pour all Edge into a blow; beats Marshal and Overwhelm;
-  loses to Parry.
-- **Overwhelm** *(throw)* — drive all Edge through a guard; beats Parry; **whiffs**
-  (loses its Edge for nothing) against a non-guard (Marshal or Unleash).
-- **Parry** *(block)* — beats Unleash; loses to Overwhelm.
-
-The offensive triangle is **Unleash ▸ Overwhelm ▸ Parry ▸ Unleash**; Marshal is
-the neutral that feeds it. **Unleash is the only stance that needs no read** — you can
-always just swing; **Marshal, Overwhelm, and Parry require reading the foe** (Focus,
-§1.8), so an Actor that hasn't read can only Unleash.
-
-**WHY.** Three stances (Marshal/Unleash/Parry) leave a safe square: always-Parry
-negates every Unleash with no downside. Overwhelm dissolves it — the throw beats
-the block — so no stance is safe (Charter §2/§3: a non-degenerate, learnable
-hidden-information game).
-
-**GUARANTEES.**
-- There is **no dominant stance**: always-Parry is punished by Overwhelm;
-  not-parrying is punished by Unleash.
-- Marshal carries no offense — it only banks and exposes — so escalation is always
-  a real risk, never free.
-
-**MANUAL.** *Marshal: ready and gather. Unleash: spend everything on a strike.
-Overwhelm: punch through a guard. Parry: read the strike, negate it, and steal the
-bank.*
-
-### 1.3 Ends-on-strike
-
-> **RESTORED — current in §1.0.** The interim charge duel tried Body-attrition (run until a
-> Body hits 0); the four-card Clash **reverts to ends-on-strike**: a duel ends the instant a
-> strike connects. Force is built during the non-connecting dance and spent on the one
-> connecting blow (`base × 2^Force`); **Body persists across duels**, so a fight to the death
-> is several short duels, not one long beat-count. The stance/Edge specifics below are
-> superseded, but the *principle* — connection = end — is current.
-
-**RULE.** A 0-Edge Unleash is still a strike. The duel **ends the instant any
-Unleash or Overwhelm connects** (mutual included). The only committed attacks that
-do **not** end it are a **parried Unleash** (negated and stolen — roles flip) and a
-**whiffed Overwhelm** (no guard to break). All non-connecting pairings (both
-Marshal, Marshal vs Parry, Marshal vs Overwhelm, Unleash vs Parry, Overwhelm vs
-Overwhelm, Parry vs Parry) continue.
-
-**WHY.** Because a base strike already ends it, the mind-game is **opt-in**: if
-neither escalates, someone pokes and it's over fast; escalation is push-your-luck.
-"Caught while charging" needs no special rule — you just take the hit.
-
-**GUARANTEES.**
-- Every duel has a finite, short expected length (a single throw, not a long
-  dance).
-- No bespoke "interrupt" rule is needed; connection = end.
-
-### 1.4 The Parry steal — the comeback
-
-**RULE.** Parry vs a real Unleash: the Unleash is negated and the Parrier **takes
-the Unleasher's entire Edge**. If the Unleash had **0 Edge**, the Parry instead
-earns **+1 Edge** (a parry always pays). An **Overwhelm is never stolen**.
-
-**WHY.** The steal is the game's biggest comeback — the lead flips mid-duel — and
-"a parry always pays" keeps Parry from ever being a dead move, without making it
-safe (Overwhelm still beats it).
-
-**GUARANTEES.**
-- A parried Unleash transfers the bank rather than destroying it (the flip).
-- Overwhelm's immunity to the steal is what keeps the steal-comeback from making
-  Parry oppressive.
-
-*(OPEN — number: does a Parry also deal counter-damage, and how much? Tuning, not
-yet decided.)*
-
-### 1.5 Edge scales the card's primary effect
-
-> **SUPERSEDED by §1.0 (The Clash).** In-duel damage now scales by **Charges**
-> (`power × 2^charges`, multiplicative) rather than Edge (`+1 per Edge`, linear). The
-> separation it protects — the move is the prediction, the charge is the magnitude, the
-> card never telegraphs the move — carries forward. (Breadth/Action cards outside a
-> Clash are unchanged; §1.7/§3.)
-
-**RULE.** Every card has one **primary effect** (its headline). Spending Edge
-scales that effect at a uniform linear rate: **1 Edge = +1 of the primary effect in
-its natural unit**, added on top of the card's base magnitude. The default unit is
-a strike's **1 Edge = 1 damage**; each non-damage maneuver names its own per-Edge
-unit (Sunder = armor pip, Disarm = a card, etc.). No card contains bespoke
-Edge-handling logic.
-
-**WHY.** One global rule means cards never "know about" Edge — `Card = what`,
-`Stance = the prediction`, `Edge = how much` stay cleanly separated, so a card
-never telegraphs the stance.
-
-**GUARANTEES.**
-- Adding a card never requires new Edge rules (data-only; no redeploy).
-- The Stance (hidden) is decoupled from the card (visible).
-- Toughness still gates the result and Power still sets the base Edge adds to (Edge
-  is additive, not a bypass).
-- A breadth (multi-target) action is unopposed (§1.8), so Edge never applies to it —
-  only a *duel's* primary effect scales.
-
-### 1.6 Termination backstop *(engine rule, not public)*
-
-**RULE.** A duel ends the instant a strike connects (§1.3), and under blind, simultaneous
-guessing one eventually does (someone misreads). As an **implementation backstop only**: if
-**N consecutive beats pass with no strike connecting** *(appendix: e.g. 12)* — the purely
-theoretical perfect-mutual-defense case — the duel **breaks off** (both disengage; the foe
-still counts as engaged, so it does not also free-hit at round end). A creature whose
-instinct drives a winnable duel to the backstop is a bug.
-
-**WHY.** Ends-on-strike (§1.3) resolves real duels via accumulated misreads; the backstop
-only guards the corner case where both fighters guess perfectly forever — never a pattern a
-real player produces — so it adds no rule anyone meets in play.
-
-**GUARANTEES.**
-- The backstop is invisible in normal play and is **not** part of the public rules.
-- Every duel terminates: it ends on a connecting strike, or breaks off after N no-connect beats.
-
-### 1.7 Facing a crowd — K duels, two caps
-
-> **SUPERSEDED by §3.** The breadth model is now §3.1/§3.2: **Tempo** = the duels you start
-> (results stick), **Focus** = the duels started on you (a Focus-defense is **reset** —
-> survival only, no damage to the attacker), a free-hit if uncovered, and a **Tempo
-> counterattack** as the only way to damage an aggressor. The linear *god ≈ party* intent
-> below carries forward; the Edge/Exposed specifics do not.
-
-**RULE.** Engaging multiple foes is **K simultaneous pairwise duels** (or one
-breadth-attack — see Coordination). Two separate per-Actor pools gate K:
-**Cadence/Tempo** caps how many you can sustain **offensively** (engaging each costs
-the target's Cadence); **Mind/Focus** caps how many you can **predict** (covering
-each costs the attacker's Cadence). When Cadence affords **K** but Focus covers only
-**J < K**, the **K − J** extra duels are **one-way**: you strike, but can't predict,
-so those foes **free-hit** you. Going **negative in any one pool** (Tempo or Focus) marks you
-**Exposed** table-wide for the round (§3.3) — Cadence sets *whether* you can sustain a
-duel, never the order duels resolve in.
-
-**WHY.** Routes offense-at-scale through Cadence and defense-at-scale through Mind so
-neither one stat owns the whole table; makes the gank (overflow free-hits) the
-natural counter to a thin Mind (Charter §4: asymmetry by design).
-
-**GUARANTEES.**
-- Edge resets per duel, so breadth never compounds (consistent with §1.1).
-- "Negate many" stays even in *total* across builds but capped *per body* — the
-  linearity invariant the god-vs-party budget depends on.
-
-### 1.8 Duel detection — reading is the contest
-
-> **PARTIALLY SUPERSEDED by §1.0 (The Clash).** The **in-duel read** described below —
-> "Focus unlocks your stance menu; without a read you can only Unleash" — is gone: in
-> the Clash all six moves are **standing**, so there is no Focus gate *inside* a duel.
-> Focus is now purely the **breadth** resource — round-end coverage of foes you did not
-> engage (§3.2). What carries forward unchanged: engaging costs **Tempo** (= the foe's
-> Cadence), an engaged foe does not also free-hit, breadth/self actions are unopposed, and
-> a creature does not read you back (its instinct is its move, §7). Read the rest of this
-> section for the breadth model; ignore its stance/Edge specifics.
-
-**RULE.** Engaging a foe (Tempo) puts you in a **clash**, resolved by the stance mix-up
-(§1.2). **Reading it (Focus) unlocks your stance menu:** with a read you have all four
-stances; **without a read your only stance is Unleash** — a blind strike. The read, not
-the swing, is what buys the *contest* (Parry, the throw, and Edge); a non-reader can only
-swing, and it resolves through **the same duel** as everything else. So two non-readers
-both Unleash — the **magnitude trade** (mutual base hits, no Edge) — and one side reading
-the other is the **one-way duel** of §1.7: the reader works the full mix-up while the
-blind side can only strike, so a blind swing is freely **parried** (§1.4). (Breadth and
-self/ally actions read no one and stay unopposed; a foe you never engage that hits you is
-a **free-hit**, §3.2.)
-
-**WHY.** The mix-up and Edge only mean anything when you are *reading* — anticipating a
-foe so you can Parry, throw, or bank. So a non-reader keeps exactly the one stance that
-needs no anticipation (Unleash) and loses the three that do. Making the read the single
-switch ties the whole contest to the resource that is *about* prediction, keeps Edge the
-price of a contested exchange (§1.1), and **folds the old "trade" into the duel** — a
-blind swing is just an Unleash, resolved by the same machinery and freely parried by
-anyone reading you — so there is one resolution path, not two.
-
-**GUARANTEES.**
-- No Edge accrues without a read — you cannot Marshal without reading, so riskless
-  hoarding is structurally impossible (consistent with §1.1).
-- Unleash is the only read-free stance; Marshal, Overwhelm, and Parry each require the
-  read (§1.2). A blind swing is therefore exploitable — a reader simply Parries it.
-- Defense is never free, but its price is **Focus**, not your action: you may act
-  (Tempo) *and* read attackers (Focus), yet Focus is capped by Mind, so you cannot read
-  everyone — the overflow free-hits you (§3.2). Offense and defense are separate pools
-  that meet only at overextension (§3.3).
-- A breadth action (one action, many targets) is never a duel — you cannot read a crowd
-  — so it is always unopposed (consistent with §1.5).
-- A creature need not read you back: its instinct is its stance (§7). The duel is on the
-  side that reads; the unread side is §1.7's one-way free-hit.
-
-**MANUAL.** *Engage to clash (Tempo). Read the foe (Focus) to unlock Parry, the throw,
-and banking — without a read you can only Unleash. No read, no contest: a blind swing is
-freely parried.*
-
-### 1.9 Resolution order — sub-phase first, attacks before buffs
-
-**RULE.** When several actions resolve in one exchange, they resolve in **descending
-sub-phase** (= descending tempo at stake), in three tiers:
-1. **Duels** (reads, §1.8) — RPS, Edge, and their damage settle first.
-2. **Uncontested attacks** — incoming strikes no one contested: the undefended blow
-   and §1.7's Focus-overflow free-hits.
-3. **Self / ally effects** — buffs, heals, and other non-engaging state changes.
-
-Thus **attacks resolve before buffs**: a self-effect cannot negate a blow already
-incoming this exchange; it takes hold from the next exchange on. Within a tier order
-is immaterial: in the single-deck core all modifiers (attachments) compose **commutatively** (§5),
-so nothing is order-dependent. *(The order-dependent **modifier** card-kind is retired with the chord
-layer — `retired-ideas.md`; were it to return, its on-target conflicts would resolve in a **fixed
-seat order**, Cadence playing no part in timing, §3.1.)* Resolution is fully deterministic.
-
-Within a tier, **resolution order is immaterial by construction**, not by luck. Three
-things make it so: each duel's rolls come from a **per-duel keyed RNG** (independent of
-when it resolves); damage **accumulates commutatively** (a fixed set of strikes sums to
-the same result regardless of the order applied); and **no actor is removed mid-tier** —
-a Body reaching 0 is *mortally wounded*, and downs are **finalized only at the tier
-boundary** (§1.3: it still lands every blow it committed). Permuting the seat order of a
-tier's duels must therefore yield the identical end-state — a built-in property test;
-any divergence is an order-dependent mechanic, i.e. a bug. Effects that would depend on
-a **sibling duel's outcome** are disallowed within a tier — push them to the next tier
-or exchange.
-
-**WHY.** Ordering by sub-phase settles the contested, tempo-spending core (the
-duels) before its consequences, and dissolves the buff-timing paradox with no new
-system: you cannot retroactively dodge an in-flight attack by buffing, because the
-attack is more engaged and resolves first. Resolving the lone intra-tier collision by
-a fixed seat order keeps Cadence out of timing entirely (§3.1) and guarantees
-determinism without manufacturing a contest the design does not need.
-
-**GUARANTEES.**
-- Resolution is total and deterministic given the seed — no real-time, no unresolved
-  tie.
-- Defense is anticipatory, not reactive: a buff played into an incoming attack does
-  not save you from it (human-confirmed intent).
-- Cadence never affects resolution order: every effect is order-independent (modifiers compose
-  commutatively, §5; the retired order-dependent modifier would use a fixed seat key, not Cadence).
-- Intra-tier resolution is order-independent by construction (keyed RNG + commutative
-  damage + boundary down-checks): an Actor in K duels takes the **sum** of the blows,
-  its fall decided by the total at the boundary, and — per §1.3 — it still lands every
-  blow it committed. Only the cross-tier order (attacks before buffs) matters.
-
-> **Worked example — the rock and the buff.** A foe throws a rock at me; I spend my
-> action buffing myself. The buff does not contest the foe, so this is **not** a duel
-> (§1.8): two unopposed actions, no Edge. They resolve by tier (§1.9) — the rock is an
-> uncontested attack (tier 2), the buff a self-effect (tier 3) — so **I take the
-> rock**, then the buff takes hold; even a buff granting rock-immunity is too late for
-> the blow already thrown. To *avoid* the rock I would **read** the thrower — spend
-> Focus to Parry it — which costs Focus, not my action, so I could buff **and** read if
-> my Focus affords it. Defense is a separate pool, not a forfeited turn.
-
----
+## 1. The strike — the Interaction *(moved)*
+
+> **Moved 2026-07-24.** A strike no longer resolves as the RPS **Clash** (stances / triangle / edge / Parry) —
+> that is a **deferred pluggable layer**, parked in [`future-possibilities.md`](../../future-possibilities.md)
+> until the core is solid. The current strike resolution is the deterministic **Interaction** — Target → Bid →
+> Strike → Resolve — specified in the combat chapter, [`combat.md`](combat.md).
 
 ## 2. Defense model — *pile → bar → pool* 🟡
 
@@ -1022,14 +629,15 @@ phase.
 
 ---
 
-## 4. The battle — hold the front, break the line, deal from the back — 🟡 ⛔ RESOLUTION SUPERSEDED
+## 4. The battle — hold the front, break the line, deal from the back — 🟡
 
-> **The shape survives; the schedule does not (human-vetted 2026-07-24).** Formations, ranks (Vanguard /
-> Rearguard / Outrider), crossing, and the front/back intent ARE the shipped model's — but the round is
-> resolved as an **eight-step schedule** (Havoc / Withdraw / Skirmish / Crossing / Defensive Volley / Raid /
-> Assault / Advance), not the "five rounds on a per-round Tempo budget over a fixed sub-phase schedule" this
-> header and §4.6 describe. The "code pending" note is stale — the step machine shipped and is gated.
-> Canonical model: [`combat-round-sequence.md`](../../combat-round-sequence.md); this section awaits fold-in.
+> **The shape is current; the resolution lives in the combat chapter (2026-07-24).** Formations, ranks
+> (Vanguard / Rearguard / Outrider), crossing, and the front/back intent ARE the shipped model's, and the
+> subsections below (§4.1–§4.5) describe them. **How the round actually resolves** — the eight-phase schedule
+> and the per-strike Interaction — is [`combat.md`](combat.md), the Spec's combat chapter (§4.6 above now just
+> points there). The old "five rounds on a fixed sub-phase schedule / code pending" framing is gone: the step
+> machine shipped and is gated. Some subsections still carry aspirational detail (stats-as-deck, the ability
+> layer) marked 🟡 — those remain future/pending, not current.
 
 > **History.** Superseded forms: front/back formation → cadence-pairing → lane assignment → the
 > **charge-and-gauntlet** → the **static-ranks** model (three ranks, two tiers, a Finesse crossing contest,
@@ -1599,210 +1207,12 @@ only to price the choice to group.)*
   beats the attacker** (weakest-link).
 - **Hoard X** = a one-card group of X one-Health bodies (swarm).
 
-### 4.6 The sub-phase schedule — resolution order, the pile, the pre-empt & disrupt — ⛔ SUPERSEDED
+### 4.6 The round schedule *(moved)*
 
-> **SUPERSEDED (human-vetted 2026-07-24)** by the shipped **eight-step round** (see
-> [`combat-round-sequence.md`](../../combat-round-sequence.md)). The Intercept / Volley / Raid / Clash /
-> Breach sub-phase schedule and its per-sub-phase pile / `cast` / `resolve` / pre-empt / disrupt are a retired
-> resolution model; the step machine resolves each of eight steps on the spot, the moment its declare/reveal
-> wave completes. Awaits fold-in.
-
-> **Supersedes** the six named phases (Standoff / Fray / Volley / Breach / Reckoning / Lull) and the
-> **per-unit lock / freed-Vanguard charge.** The *spine* holds — a front shields a back, you reach the back
-> by **winning**, force-not-fiat — and the per-sub-phase pile, the pre-empt, `cast`/`resolve`, and disrupt
-> all carry over unchanged. What changes: the round resolves over the **declared-intention sub-phase
-> schedule** of §4 (Intercept / Volley / Raid / Clash / Breach), and the breaker is a **declared Outrider**
-> with its own sub-phase (the Raid), not a Vanguard that freed itself through a per-unit lock.
-
-**PRINCIPLE — why there are sub-phases at all (re-derive timing questions from this).** *Within* a single
-sub-phase, damage is applied **order-independently** (§1.9): every strike and defense is **committed up
-front** and the whole sub-phase resolves together — *including the blows of a body that dies in that same
-sub-phase* (§1.3: a mortally-wounded unit still lands every blow it committed). The **only** reason to
-split the round into separate sub-phases is to impose a **timing order between them:** a unit **dead at an
-sub-phase boundary takes no further action**, so a death can **preclude** what happens in a *later*
-sub-phase but can never reach back into an *earlier* one. Every schedule rule is a corollary — the
-**Intercept and Volley pre-empt the Raid** (an Outrider screened or shot down before the Raid never
-strikes), a **disrupted caster's deferred spell fizzles** (no caster left at the last sub-phase), and a
-**committed defense is spent whether or not it succeeds** (it was locked before resolution). When a new
-timing question arises, decide it from this one rule: **put two effects in the same sub-phase if they
-should *trade* (both land); in ordered sub-phases if one death should *silence* the other.** *(This is why
-humans can collapse the schedule in their heads and consult the order only when an outcome is genuinely
-ambiguous — §4.)*
-
-**RULE — the round resolves over the schedule; each sub-phase is a boundary.** A round runs: **Marshal**
-(hidden) → **Reveal** → **Ready** (Standing effects auto-land) → **Engage**, the **sub-phase
-schedule** (Intercept → Volley → Raid → Clash → Breach, §4) → **Refresh** (the Lull: Tempo re-derived from the Form — borrowed Tempo does not return,
-§5.5 — Health persists, round++). Each sub-phase is a §1.9 boundary (declare → resolve → apply; accumulate,
-then lock; deaths finalize, §1.3). All Tempo across the whole round is paid from **one shared per-round
-pool** (no refresh between sub-phases, §4).
-
-**RULE — the accumulator is per-sub-phase.** Each sub-phase owns a **per-target pile**; a landed hit adds
-**Might** to the pile of its **`resolve`** sub-phase, and when the pile clears **Toughness** one Health
-card flips (overflow wasted). **Every pile wipes at its own sub-phase boundary** — sub-threshold damage
-does **not** carry between sub-phases (this **refines §2.2** from "the round's pile" to *the sub-phase's
-pile*). **Health persists** (§2.1); only the sub-threshold pile is ephemeral. Effects that share a
-`resolve` sub-phase **stack in that pile** (additive, order-independent — §0.1: a combo is diverse effects
-in one pile, never a multiplying chain). *Consequence:* **Toughness is a per-sub-phase wall**, so burst
-within one sub-phase beats chip spread across them — revisit Toughness values in `booklet.ron` (numbers
-are human-tuned, `0-source-of-truth`). *(Motivation: tabletop legibility — no pile-number ever crosses an
-sub-phase boundary, so the only number a human carries through the round is Health.)*
-
-**RULE — the group accumulator: AoE pool + spillover pool (order-independent).** When an sub-phase's
-targets are a **group**, its per-sub-phase pile splits into two group-level pools so the result never
-depends on the order strikes were declared (§1.9):
-- **AoE pool** — each AoE strike adds its **full Might to every member's pile**.
-- **Spillover pool** — each single-target strike adds its Might here; it **cascades front-to-back in
-  declared order**, every member absorbing into its pile until it **dies** (its pile reaches `remaining
-  cards × Toughness`), then the remainder overflows to the next.
-The AoE is **counted in each member's pile while the spillover cascades** (so spillover only needs to
-*finish* a body the AoE already softened), and **all cards flip at the sub-phase boundary** (`flips =
-⌊pile ÷ Toughness⌋`, capped at the member's cards; overflow wasted). *Worked example — AoE 3, spillover 2
-over four 2-Health / 2-Toughness bodies a–d: **a** takes 3 + 1 = 4 (both cards flip → dies; 1 spillover
-overflows), **b** takes 3 + 1 = 4 (dies; spillover spent), **c** and **d** take 3 each (one card apiece,
-1 wasted each) — **2 damage wasted.*** AoE thus reaches a shielded back member regardless of order (it
-bypasses the bodyguard) — the **anti-cluster counter**: a bodyguard soaks aimed fire but cannot cover the
-area.
-
-**RULE — sub-phases cycle to exhaustion (force-not-fiat).** An sub-phase is not a single exchange but a
-**loop**: units keep committing strikes and defenses — accumulating in the per-sub-phase pile — **until no
-one wants to spend Tempo** (no positive-effect action remains, or the pools run dry), and only then does the
-boundary fire (flip, finalize deaths, wipe the pile). **Tempo is therefore the true resource:** a unit with
-more Tempo strikes more times in the same sub-phase, and enough Tempo overwhelms **any** Toughness. *(Test:
-imagine an infinite-Tempo unit — if it could not turn that into unlimited strikes, Toughness would be a hard
-wall and force-not-fiat would break. A Rearguard that still cannot reach the enemy back is **not** a
-violation — staying back was its choice; to wipe everyone it declares Outrider or Vanguard.)*
-
-**RULE — the positive-effect rule (no futile spend), judged at the target.** A unit commits a Tempo action
-only when it **changes the outcome** — and that is judged at the **target's pile, not the lone strike**: a
-strike that cannot flip a card **by itself** is still worth committing if the **combined** committed Might
-on that target this sub-phase crosses a Toughness it would not without it (focus-fire — weak chip ganging
-up to crack a wall). Likewise a defense is committed only at the **full** cost that actually beats the bid
-(never a partial spend that still eats the hit), and a strike-back only when it can crack the attacker. A
-**dead unit takes no action.** *(This is the rule the scripted PvE policy and the solver both follow; it is
-what lets a group's chip combine instead of each weak member idling — and it is the converse of cycling:
-the loop keeps going precisely until no *positive-effect* spend is left.)*
-
-**RULE — strike-back is melee-only and reflexive.** A struck unit may **strike back** only against a
-**melee** attacker (it *came to you* — the position half of an attack is waived, there being no ground to
-cross), and only if the defender itself **wields a melee attack**; a ranged attacker firing from across the
-field is **not** struck back (nothing closed to hit). Striking back is still an **action**, so it costs
-**one Tempo**. The only answer to a blow you cannot strike back at is to **evade** it (the Tempo contest,
-open to anyone) or to **counter-fire** with your own ranged attack (a separate strike, not a reflex). A
-pure caster caught in melee therefore cannot strike back — it can only evade or be hit.
-
-**RULE — role priorities (the default targeting order).** Each role engages in a fixed order of preference
-— a card-writable priority list a reasonable player (and the PvE stand-in) follows. It is **policy, not a
-hard rule:** you may always go around it, at its Tempo cost.
-
-- **Vanguard:** screen the enemy **Outrider** → clash the enemy **Vanguard** → breach the enemy **Rearguard**.
-- **Outrider:** raid the enemy **Rearguard** → flank the enemy **Vanguard** → hunt straggling **Outriders**.
-- **Rearguard:** destroy the enemy **Vanguard** → hunt straggling **Outriders** → finish the enemy **Rearguard**.
-
-Read against the schedule, these *are* the model's signature behaviours, with no extra rules. The **Outrider
-alone** puts the back **first** (its raid); every other role puts it **last**. And the **Rearguard's** top
-priority — the enemy Vanguard, struck in the Clash — falls *after* its second — a raider, met in the Volley —
-which is the **opportunity cost that defines the glass cannon:** hold the shot for the wall (and eat the
-raid), or spend it screening the raider (and have none for the wall). A unit **holds** Tempo for a
-higher-priority target still to come rather than spend it on a lower one now.
-
-**RULE — back-access (who may strike the Rearguard): flank the intact line, or pour through a broken one.**
-The back's shield is **emergent, not decreed** — it falls straight out of the priorities above. A Rearguard
-is reached two ways:
-
-- **Flank the intact line — the Outrider's raid.** A declared Outrider strikes the enemy Rearguard in the
-  **Raid**, going *around* a still-living front — **if it survived** the front's **Intercept** and the
-  back's **Volley** (the pre-empt). It is the **only** role that may reach a *guarded* back, and it pays for
-  that with total exposure before it lands (its whole purpose — the one role whose first priority is the back).
-- **Pour through a broken line — the Breach.** `V→R` (a Vanguard crossing the open ground) and `R→R` (a
-  back-line firing on the now-exposed enemy back) resolve in the **Breach**, but **only once that side's
-  Vanguard has fallen** — the literal sense of *breach*: you pour through a line that has **broken**, never
-  an intact one. *How* and *by whom* the line breaks is fully emergent (your Vanguard kills it in the Clash,
-  your Rearguard shoots it down — any force; force-not-fiat); the gate is only *"is the line broken."*
-
-So a living front shields the back **through the role order** — every role but the Outrider targets the enemy
-Rearguard last and only through a broken line — not by any immunity. **This is why the gate is a floor, not
-fiat:** were the Breach *ungated*, a Vanguard that merely **cannot crack** the enemy front would peel around
-it to the back — so a **tougher** front would **expose** its own Rearguard (attackers route around it),
-backwards. Requiring the line to **fall** keeps a tough front genuinely protective, and leaves flanking an
-intact line to the Outrider who pays for it. *(This also lets two front-less all-Rearguard sides resolve via
-`R→R` instead of standing forever out of range.)*
-
-**RULE — `cast` & `resolve` (carried forward).** An ability's timing is **two fields**:
-
-- **`cast`** — where you may pay Tempo and commit it: **`standing`** (the Ready step — own-side buffs / braces,
-  auto-land) or **`strike`** (any sub-phase in which the unit may act per reach + back-access; default).
-- **`resolve`** — which sub-phase's pile the effect lands in. A card **authors one of two**: **`on-cast`**
-  (the sub-phase it was used — the old *instant*; a Rearguard may fire on a raider in the Volley *and* on
-  the enemy front in the Clash; the default) or **`reckoning`** (the old *deferred* — paid up front, lands
-  in the **last** sub-phase of the round; that deferral is the **only** reason a breacher can disrupt it).
-  The Outrider's **raid** and the Vanguard's **breach** are not authored resolves — they are the timing of
-  their **scheduled sub-phase** (Raid / Breach), exposed to the earlier pre-empt by construction.
-
-**Legal targets are derived, not enumerated:** a card declares only its window; *what it may hit* comes from
-**reach** (§4.2) + back-access (above). The **disruption window** is the gates between `cast` and `resolve`:
-`on-cast` ⇒ zero ⇒ **undisruptable** (§1.3); `reckoning` ⇒ the sub-phases in between are exactly where a
-death can silence it.
-
-**RULE — the rear pre-empts the raider.** A raiding Outrider is **not** special: in the **Intercept** the
-enemy front may strike it, and in the **Volley** the enemy back may fire on it — both **before** the
-Outrider's Raid blow lands (the schedule order). Any §3.4 response (dodge, strike-back, counter-fire) from
-the shared pool applies. So the rear can drop or drain the breaker before it arrives — *and a Rearguard that
-spends its shot doing so has none left for the enemy Vanguard in the Clash* (the opportunity cost, §4).
-
-**RULE — interception & flanking.** The **Intercept** (`V→O`) is the front's screen on crossing
-Outriders — a Vanguard that kills a raider there **precludes** its Raid (dead at the boundary). A Vanguard
-with no Outrider to screen falls back to the **Clash** (`V→V`) and then the **Breach** (`V→R`) — screener →
-primary force → cleanup (§4). An Outrider with no reachable Rearguard falls back to the **Breach**
-(`O→V`, `O→O`).
-
-**RULE — disrupt.** Default disrupt = **kill the caster before its `reckoning` resolves** (no caster, no
-spell). Dedicated **non-lethal disruption** (stagger / silence / unseat) may **cancel or delay** a deferred
-spell without a kill. Both cash out the same way: a deferred spell resolves only if its caster reaches the
-last sub-phase able to cast.
-
-**WHY.** The schedule *is* the timing system — one fixed order replaces a pile of per-effect timing rules,
-and every consequence (interception, pre-empt, Reckoning) is just a position in it. The **Intercept/Volley
-before the Raid** is the theme made mechanical: a flanker crossing open ground is screened by the front and
-shot at by the back *before* it arrives, so breaking the line is push-your-luck — you suffer their answer to
-reach them. Deferring a slow spell to the last sub-phase is the caster's own bet — *dear and late*: a big
-effect that lands **only if it survives** the round it provoked. And **one shared pool** makes every strike,
-defense, raid, counter-shot, and spell a single **allocation** — the opportunity cost across the schedule is
-the balance engine (§4).
-
-**GUARANTEES.**
-
-- **The schedule is the sole timing system:** every legal attacker→target role-pair resolves once, in the
-  fixed order (Intercept → Volley → Raid → Clash → Breach); a unit dead at an sub-phase boundary takes no later action. No other timing rule.
-- **Sub-phases cycle to exhaustion:** within an sub-phase, strikes and defenses repeat until no one has a
-  positive-effect Tempo spend left; only then does the boundary flip / finalize. Tempo is the true
-  resource — enough of it overwhelms any Toughness (force-not-fiat).
-- **The positive-effect rule is judged at the target:** a strike counts if the *combined* committed Might
-  flips a card (focus-fire), not only if it flips alone; a defense is paid only at the full beating cost; a
-  dead unit acts not.
-- **Group accumulator:** AoE pool (full Might to every member) + spillover pool (cascades front-to-back,
-  overflowing on a death), AoE counted in-pile while spillover cascades, all flips at the boundary — AoE
-  reaches a shielded back member (anti-cluster), order-independent.
-- **Strike-back is melee-only + reflexive:** only a melee attacker is struck back, only by a melee-capable
-  defender, for one Tempo; a ranged blow is answered only by evasion or counter-fire.
-- **Back-access — flank or breach:** the Outrider flanks the *intact* line (the Raid, paying Intercept +
-  Volley); everyone else pours through a *broken* line (the Breach's `V→R` and `R→R`, only once that
-  Vanguard has fallen). The shield is **emergent from the role priorities**, never a decreed immunity —
-  and gating the breach on the line falling (not on "I can't crack it") keeps a tough front protective.
-- **Role priorities are policy, not law:** each role's target order (Vanguard O→V→R, Outrider R→V→O,
-  Rearguard V→O→R) is the predictable default; a unit holds Tempo for a higher priority still to come.
-  Going around the order is always legal, at its Tempo cost.
-- **Pre-empt:** the Intercept and Volley resolve **before** the Raid, so the front's screen and the rear's
-  fire can stop a breaker before it strikes.
-- **Per-sub-phase pile:** Might accumulates within an sub-phase and **wipes at its boundary**; Toughness
-  is a per-sub-phase wall; only Health crosses boundaries.
-- **`cast`/`resolve`:** `on-cast` is undisruptable; `reckoning` lands last and is disruptable by killing or
-  unseating the caster first; the raid/breach take their scheduled sub-phase's timing.
-- **One pool:** every action across the whole schedule is paid from the single per-round Tempo budget.
-- **Force-not-fiat preserved:** you reach the back by winning (the raid) or killing the front (the breach),
-  never by decree; every position still dies to enough Tempo.
-
-*(Worked round to be regenerated for the sub-phase schedule:
-`log-driven/combat-logs/designer/card-combat-round-breach.md`.)*
+> **Moved 2026-07-24.** The round resolves as the **eight-phase schedule** — Havoc → Withdraw → Skirmish →
+> Crossing → Defensive Volley → Raid → Assault → Advance — each strike running the Interaction. It is specified
+> in the combat chapter, [`combat.md`](combat.md). The earlier Intercept / Volley / Raid / Clash / Breach
+> sub-phase schedule is retired ([`retired-ideas.md`](../../retired-ideas.md)).
 
 ## 5. Zones / exhaustion — *the card state-machine* 🟡
 
@@ -2000,6 +1410,38 @@ one-way), reshuffles, never exhausts. Source:
 [`notes/decision-making.md`](../notes/decision-making.md).
 
 ## 8. Strategic layer — *the run* 🟡
+
+> **Two strategic layers, do not conflate them (2026-07-24).** What **ships in the card-table product** is the
+> simple **map loop** in §8.0 below — a 3×3 kit map, repeatable fights, one hero per solo. The richer design
+> in §8.1–§8.6 — a 25-card **Suit grid**, **reward tracks**, fog, progression — is **aspirational / partly the
+> deckbound *sample*'s**, not the product's; treat those subsections as future direction
+> ([`future-possibilities.md`](../../future-possibilities.md)) until reconciled, not current product mechanics.
+
+### 8.0 The shipped map loop *(current — the card-table product)*
+
+**RULE.** The run is a **3×3 grid** of location cards. The party of four (one per kit) starts at the **centre**
+cell. Each **Day**, a hero **marches one orthogonally-adjacent cell** (spending its day). A cell holding a
+stationed hero **and** an encounter is **combat-ready** and offers a **Fight**.
+
+- **Cell capacity.** A **solo cell** (its encounter is a lone, non-party fight) seats **exactly one hero**;
+  marching a second in **swaps** the resident back to the newcomer's origin. A **party cell** (a corner or the
+  capstone) is **uncapped** — muster the whole band. So the map's shape reads its own rule: the four
+  orthogonal neighbours of centre are solos, the diagonal corners are party fights, the centre is the capstone.
+- **Fights are repeatable.** Winning does **not** consume the encounter; the location stays combat-ready and
+  can be fought again. What marks a location as beaten is its **outcome record** — a `Victory` / `Defeat` /
+  `Draw` deck (the round logs inside) left at the place on fold-back — not a vanished encounter.
+
+**WHY.** One hero per solo keeps a lone puzzle a lone puzzle (each solo is soloable by exactly its counter
+kit); the party cells teach combined arms; repeatability lets a player re-attempt and study a fight. The
+concrete instantiation — which 9 encounters, which 4 kits — is the **product spec**
+([`product-spec.md`](../../product-spec.md)), generated from `catalog::ENCOUNTERS` / `catalog::ROSTER`.
+
+**GUARANTEES.**
+- A solo cell never holds two heroes (enforced at the drop, `board_game::march`; test
+  `a_solo_cell_swaps_rather_than_stacking_heroes`).
+- A beaten location remains fightable (test `a_beaten_fight_can_be_repeated`).
+
+---
 
 The game outside a single fight: the world map, the clock, **role-card rewards**, encounters, and
 progression. Full design background: `progression-design.md` and **`role-card-redesign.md`** (the

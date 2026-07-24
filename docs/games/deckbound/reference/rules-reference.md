@@ -32,12 +32,6 @@ The in-game encyclopedia, generated from the Spec's `TERM` definitions and the p
 - **Finesse** — A permanent Form stat: the magnitude on each **Tempo** card (the *grade*). Its number matters only in a **Tempo contest** — block / slip / evade — where both sides commit Tempo cards (cards × Finesse) and the side avoiding the strike must strictly exceed (a tie lands the strike). A strike's force is the same whatever its Finesse.
 - **Tempo** — The round's pool of action cards: **Cadence**-many, each worth **Finesse**. Flip one to take any action (strike, block / slip / evade, strike back) — standing and soaking are free; spent cards stay spent until the round refresh (shared across the round's two phases; a **Recover** verb can return one mid-round, §5).
 
-## Clash module
-
-- **The Clash** — An optional 1v1 mix-up that replaces a same-range trade. Each beat both pick a card and reveal at once: Strike, Anticipate, Gather, Evade.
-- **Cards** — Strike beats Gather; Anticipate beats Evade; Gather beats Anticipate; Evade beats Strike. Strike also beats Anticipate; Strike-vs-Strike trades.
-- **Force** — Gather builds +1 Force; each Force doubles your connecting hit. Evading a Strike steals the striker's Force (always at least 1).
-
 ## Powers
 
 - **Phalanx** — Wall chargers who stop together combine their effort to intercept runners — several defenders hold the front as one.

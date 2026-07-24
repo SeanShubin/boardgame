@@ -9,7 +9,7 @@
 //! Rendered to `docs/games/deckbound/reference/combat-targets.md` by `examples/targets` (through
 //! `mdtable::pad_tables`, the repo's one table style), and a test asserts the committed file still matches.
 //! Change the schedule and the doc fails until it is regenerated. The canonical prose is
-//! `docs/games/deckbound/combat-round-sequence.md`; this is the same schedule as a lookup table.
+//! `docs/games/deckbound/canon/2-spec/combat.md`; this is the same schedule as a lookup table.
 
 use rules::combat::step_game::{STEPS, Step, step_coord};
 
@@ -104,7 +104,7 @@ pub fn table_md() -> String {
         "# Combat - who can target whom, and when\n\n\
          > **Auto-generated** from `deckbound_board::targets` (the step machine's reach rules, written out) -\n\
          > do not edit by hand; regenerate with `cargo run -p deckbound-board --example targets`. A test fails\n\
-         > if it drifts. The canonical prose is `docs/games/deckbound/combat-round-sequence.md`.\n\n\
+         > if it drifts. The canonical prose is `docs/games/deckbound/canon/2-spec/combat.md`.\n\n\
          The round is EIGHT steps, each its own declare/reveal wave, resolved on the spot - so a death at an\n\
          early step silences every later one. The two movement steps (2 Withdraw, 4 Crossing) move bodies\n\
          instead of striking: an outrider may rejoin its own line, and a vanguard that declared no line strike\n\

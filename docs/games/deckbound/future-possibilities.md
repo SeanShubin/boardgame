@@ -541,3 +541,23 @@ layer (#2), solvable for a mixed-strategy optimum.
 **Promising — the strongest simplification on the table.** Same game, far less machine, and it makes
 Speed / Drive / Power finally orthogonal. Wants playtest plus the force-not-fiat invariant wired before
 graduating to §4; hold spec-first until the decisions above are pinned.
+
+## 9. The RPS Clash — the deferred tactical layer
+
+**Deferred, not declined** (moved here from `canon/2-spec` §1, 2026-07-24). The original tactical core was an
+RPS-style **Clash**: a strike resolved as a four-card duel over **stances** (a rock-paper-scissors triangle),
+an **edge** meter, and a **Parry-steal** comeback. It is a *pluggable* mind-game layer that sits on top of a
+strike — genuinely interesting, and intended future work.
+
+**Why it's parked.** The core game must be fully working and balanced first. The Clash adds hidden RPS, which
+makes combat non-deterministic — and the current design leans hard on **determinism**: a scripted foe is a
+fixed function of the board, so the player can predict it exactly and the solver can prove a fight winnable or
+doomed. Add the Clash and that whole "greedy is optimal against a deterministic opponent" property, plus the
+cheap exact balance gate, would have to be re-derived. So it waits until the deterministic core is solid; then
+it plugs in as an optional layer.
+
+**What ships in its place now.** The deterministic **Interaction** — Target → Bid → Strike → Resolve (a
+Finesse-weighted tempo-flip reach contest, then Might over the Grit bar) — see
+[`canon/2-spec/combat.md`](canon/2-spec/combat.md). The full prior Clash spec (stances, the triangle, edge
+scaling, the Parry steal, duel detection, resolution order) is preserved in git history as §1 of
+`canon/2-spec/README.md` before the 2026-07-24 reorg.

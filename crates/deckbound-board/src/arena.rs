@@ -1,5 +1,5 @@
 //! **Board <-> the step machine.** The card-table fight surface over the CANON combat model
-//! (`rules::combat`, the eight-step round - see `docs/games/deckbound/combat-round-sequence.md`), with the
+//! (`rules::combat`, the eight-step round - see `docs/games/deckbound/canon/2-spec/combat.md`), with the
 //! **cards as the source of truth**:
 //!
 //! - **Rank and region are pile membership - and both are EARNED, never declared.** `[Arena]` holds one pile

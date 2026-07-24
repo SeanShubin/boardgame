@@ -1462,7 +1462,9 @@ mod tests {
         let r = Deckbound.reference();
         assert!(r.len() >= 10, "the encyclopedia has entries");
         assert!(r.iter().any(|e| e.term == "Vanguard"));
-        assert!(r.iter().any(|e| e.category == "Clash module"));
+        // Was "Clash module" - retired from the product spec in the 2026-07-24 reorg (see the glossary
+        // test's note; the sample's encyclopedia is parsed from the product spec pending a re-home).
+        assert!(r.iter().any(|e| e.category == "Resources"));
     }
 
     /// The encyclopedia is reachable as an action and navigable category → entries → back.

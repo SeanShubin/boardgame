@@ -1,16 +1,13 @@
-# The combat round sequence
+# Combat — the round (Spec §C)
 
-> **CANON for the shipped combat model** (promoted from `needs-merge/`, 2026-07-22). The authoritative
-> step-by-step procedure for one combat round as implemented in `crates/rules/src/combat` and asserted by the
-> balance gate (`cargo test -p deckbound-board --test diagonal`).
->
-> **Human-vetted 2026-07-24 to SUPERSEDE `canon/2-spec`'s combat sections** — §1 (The Clash: stances /
-> triangle / edge / Parry) and §4 / §4.6 (the sub-phase schedule). Those describe a design the code
-> deliberately moved past; this is the canonical combat model, and where the two disagree this wins. Per
-> [`canon/0-source-of-truth.md`](canon/0-source-of-truth.md) a supersession is a human decision, and it has
-> been made — so this is no longer a parallel fork but a promotion pending merge. **Fold-in pending:** the
-> plan is to migrate this content INTO §4 of the Spec and retire this file to a pointer, so there is one
-> canon file again. Until then, the superseded Spec sections carry a banner pointing here.
+> **This is the Spec's combat chapter** (part of [`canon/2-spec`](README.md); canonical for combat mechanics,
+> the code conforms to it). It is the authoritative step-by-step procedure for one combat round as implemented
+> in `crates/rules/src/combat` and asserted by the balance gate (`cargo test -p deckbound-board --test
+> diagonal`). Folded in here 2026-07-24 (human-vetted), it **replaces** the earlier combat design that lived
+> in the README's §1/§4: the RPS **Clash** is now a deferred pluggable layer
+> ([`future-possibilities.md`](../../future-possibilities.md)), and the old Intercept/Volley/Raid/Clash/Breach
+> **sub-phase schedule** is retired ([`retired-ideas.md`](../../retired-ideas.md)). Where this and any older
+> combat prose disagree, this wins.
 
 Status: **the shipped model**, 2026-07-21. The canonical step-by-step procedure
 for one combat round, written so a human can run it at a table - and it is what
@@ -19,7 +16,7 @@ declare/reveal wave (`step_game`), each resolved on the spot (`steps.rs`), and
 the combat log (`scripts/combat.sh` / `scripts\combat.ps1`, mirrored to
 `fight-log.txt`) prints these exact coordinates - `round N` / `step K/8: Name`.
 The dissolved crossing contest's bid-tree exploration is kept as history in
-[`needs-merge/crossing-bid-tree.md`](../../../needs-merge/crossing-bid-tree.md);
+[`needs-merge/crossing-bid-tree.md`](../../../../../needs-merge/crossing-bid-tree.md);
 the surviving bid math is stated inline under Global rules. This document is the
 *frame* - the order of play, and who may do what when.
 

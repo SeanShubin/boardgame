@@ -29,7 +29,7 @@ The documentation is split by **authority**:
 - **[game-flow.md](game-flow.md) — the complete game-flow map.** Every cycle and phase, largest to
   smallest (**Run ⊃ Day ⊃ Encounter ⊃ Round ⊃ Phase**, plus the **Clash ⊃ Beat** RPS), each pointing
   to its authoritative source. Start here to see how the whole game is structured.
-- **[combat-round-sequence.md](combat-round-sequence.md) — the SHIPPED combat model's canon.**
+- **[canon/2-spec/combat.md](canon/2-spec/combat.md) — the Spec's combat chapter (the shipped model's canon).**
   The eight-step round (Havoc / Withdraw / Skirmish / Cross / Defensive Volley / Raid / Assault /
   Advance) and the four-minor-step Interaction primitive (Target → Bid → Strike → Resolve), as
   implemented in `crates/rules/src/combat` and asserted by the diagonal balance gate. Documents

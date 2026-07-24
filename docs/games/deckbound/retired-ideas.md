@@ -75,3 +75,20 @@ considerations that sank it:
 5. **Resolve the name collision and the overlap.** "Aspect" was reserved-but-unused and is now gone
    from code; pick a **non-colliding name**, and make the revival the **composition mechanic only** — it
    must not re-introduce the deck × suit stat grid under a new label.
+
+## The sub-phase schedule — Intercept / Volley / Raid / Clash / Breach
+
+**Retired 2026-07-24** (was `canon/2-spec` §4.6). The round used to resolve over a fixed five-slot **sub-phase
+schedule** — Intercept → Volley → Raid → Clash → Breach — each slot a boundary that banked and wiped its own
+damage pile, with pre-empt and disrupt hooks. It was itself the successor to an even older six-phase /
+per-unit-lock model.
+
+**What replaced it.** The shipped **eight-phase round** — Havoc → Withdraw → Skirmish → Crossing → Defensive
+Volley → Raid → Assault → Advance — where each phase is its own declare/reveal wave resolved on the spot, and
+each strike runs the four-step Interaction (Target → Bid → Strike → Resolve). Specified in
+[`canon/2-spec/combat.md`](canon/2-spec/combat.md), gated by `cargo test -p deckbound-board --test diagonal`.
+
+**The bar to come back.** None expected — the eight-phase round measured the same balance the sub-phase model
+targeted while expressing same-round death, crossing, and the screen as ordinary steps, so there is no open
+problem the sub-phase schedule solves better. Full prior text: git history, §4.6 of the README before the
+2026-07-24 reorg.

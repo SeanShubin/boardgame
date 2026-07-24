@@ -2,7 +2,7 @@
 
 > **Auto-generated** from `deckbound_board::targets` (the step machine's reach rules, written out) -
 > do not edit by hand; regenerate with `cargo run -p deckbound-board --example targets`. A test fails
-> if it drifts. The canonical prose is `docs/games/deckbound/combat-round-sequence.md`.
+> if it drifts. The canonical prose is `docs/games/deckbound/canon/2-spec/combat.md`.
 
 The round is EIGHT steps, each its own declare/reveal wave, resolved on the spot - so a death at an
 early step silences every later one. The two movement steps (2 Withdraw, 4 Crossing) move bodies

@@ -1,6 +1,8 @@
 # Combat — phase-by-phase appendix
 
 > **Auto-generated from `crates/deckbound/src/rules.rs`** (the canonical mechanical text) — do not edit by hand; regenerate with `cargo run -p deckbound --example handbook`. This is the *mechanical* reference: each phase does exactly one thing, over two accumulators (the per-sub-phase damage **pile** and **Tempo**). The thematic overview lives in the rulebook.
+>
+> **Scope: the `deckbound` reference sample, NOT the shipped card-table product.** The product's combat is the eight-phase round (Havoc ... Advance) in [`canon/2-spec/combat.md`](../canon/2-spec/combat.md); this appendix documents the sample's separate phase model.
 
 ## Phases (in round order)
 
