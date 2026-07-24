@@ -1,8 +1,11 @@
-# Run the card-table app from a CLEAN SLATE - the same pristine table "Start Over"
-# resets to, but from launch. It discards the persisted session by deleting the
-# active save (the app then loads the fresh sample table); your own ".bak" backups
-# next to it are left alone. Extra args pass through to cargo, e.g.
-# scripts\run-fresh.ps1 --release
+# Run the card-table app in DEBUG mode: a clean slate AND the doom oracle turned on.
+# Two things in one: it discards the persisted session by deleting the active save
+# (the app then loads the fresh sample table, exactly like "Start Over"), and it sets
+# BOARDGAME_ORACLE so the System deck's "Doom oracle" toggle opens ON - the combat
+# foresight badges (winnable / doomed) are visible from launch. A plain scripts\run.ps1
+# opens with the oracle off; you can also flip the toggle in-app at any time. Your own
+# ".bak" backups next to the save are left alone. Extra args pass through to cargo, e.g.
+# scripts\run-debug.ps1 --release
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
@@ -19,6 +22,7 @@ if (Test-Path $save) {
 
 Push-Location (Split-Path -Parent $PSScriptRoot)
 try {
+    $env:BOARDGAME_ORACLE = "1"
     cargo run -p boardgame @args
     if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 } finally {

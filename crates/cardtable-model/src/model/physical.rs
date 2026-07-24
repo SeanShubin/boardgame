@@ -130,6 +130,25 @@ pub enum Utility {
     Exit,
     /// Start over from a pristine table, discarding this session's changes and the saved game.
     StartOver,
+    /// Toggle the doom oracle (the combat foresight badges) on or off. Off by default; a stuck player flips
+    /// it on to see which lines are winnable, then off again once they have found the path. The **state IS
+    /// the card's own title** ([`oracle_toggle_title`]): the renderer flips the title on click and the game
+    /// reads it back to decide whether to run the solver, so the toggle needs no state anywhere but the card.
+    ToggleOracle,
+}
+
+/// The doom-oracle toggle card's title for a given on/off state — and its inverse, [`oracle_toggle_on`].
+///
+/// The state lives nowhere but here: the renderer writes this title onto the card, and the game reads it
+/// back. Both sides route through this one pair of functions so the on/off format can only ever be spelled
+/// one way. Kept beside [`Utility::ToggleOracle`] so the writer and the reader share a single definition.
+pub fn oracle_toggle_title(on: bool) -> String {
+    format!("Doom oracle: {}", if on { "on" } else { "off" })
+}
+
+/// Read the doom-oracle toggle state back from a title written by [`oracle_toggle_title`].
+pub fn oracle_toggle_on(title: &str) -> bool {
+    title.rsplit(' ').next() == Some("on")
 }
 
 /// A **recipe**: the structured content a starting kit yields when it equips a character. It carries an

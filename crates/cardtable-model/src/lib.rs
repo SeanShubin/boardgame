@@ -20,7 +20,7 @@ pub use binding::from_table_view;
 pub use model::layout;
 pub use model::{
     Arrangement, Board, Card, CardId, CardKind, Face, Layout, Node, Pile, PileId, Pos, Recipe,
-    Size, TableauError, Utility,
+    Size, TableauError, Utility, oracle_toggle_on, oracle_toggle_title,
 };
 pub use scene::{
     Badge, Choice, Highlight, Lane, Link, Outlook, Row, Scene, SceneBody, Team, Tile, Tone, Track,

@@ -31,7 +31,7 @@ use std::collections::HashMap;
 use cardtable_model::{
     Arrangement, Board, Card, CardId, CardKind, Choice, DropTarget, Face, Highlight, Lane, Layout,
     Link, Node as TableNode, Outlook, PileId, Pos, Row, Scene, SceneBody, Size, Team, Tile, Tone,
-    Utility,
+    Utility, oracle_toggle_on, oracle_toggle_title,
 };
 
 #[cfg(feature = "game")]
@@ -418,6 +418,16 @@ fn add_util(table: &mut Board, pile: PileId, title: &str, utility: Utility) {
     }
 }
 
+/// Whether the doom oracle should start **on** at launch — read once from the `BOARDGAME_ORACLE` environment
+/// variable so the `run-debug` script can open straight into foresight while a plain `run` stays off.
+///
+/// A desktop convenience only: on `wasm32` there is no environment, so the web build ignores it and always
+/// opens off (the intended default there). The **in-app toggle card** is the real, cross-platform switch;
+/// this only picks the value the System deck is first built with.
+fn oracle_default_on() -> bool {
+    !cfg!(target_arch = "wasm32") && std::env::var_os("BOARDGAME_ORACLE").is_some()
+}
+
 /// Install the **System deck** into `table` — a regular [`Free`](Arrangement::Free) deck you drill into.
 /// Holds **Start Over** (pristine table) everywhere, **Exit** on desktop (a browser can't quit its own
 /// tab), and an expandable **Version** card (`build`, if a hash is known) so you can tell what's deployed.
@@ -438,6 +448,15 @@ fn install_system_deck(table: &mut Board, build: &BuildInfo) {
         return;
     };
     add_util(table, pile, "Start Over", Utility::StartOver);
+    // The **doom oracle** toggle: off by default so the plain experience carries no foresight badges. A stuck
+    // player flips it on to read which lines are winnable, then off again. Its state IS its title (the game
+    // reads it back to gate the solver), so it is created reading the launch default and toggled in place.
+    add_util(
+        table,
+        pile,
+        &oracle_toggle_title(oracle_default_on()),
+        Utility::ToggleOracle,
+    );
     if !cfg!(target_arch = "wasm32") {
         add_util(table, pile, "Exit", Utility::Exit);
     }
@@ -759,6 +778,22 @@ fn on_click(
                     // be re-tidied into the row. Say so explicitly - the size-diff can't notice (same ids,
                     // same footprints).
                     tidy.0 = true;
+                }
+                Utility::ToggleOracle => {
+                    // Flip the toggle in place: the title carries the state, so read it, invert it, write it
+                    // back. Nothing else moves - the game reads this same title next frame to gate the solver,
+                    // so a stuck player can turn foresight on mid-play and off again without disturbing anything.
+                    let on = table
+                        .0
+                        .card(id)
+                        .is_some_and(|c| oracle_toggle_on(c.front_title()));
+                    let _ = table.0.set_face(
+                        id,
+                        Face::Up {
+                            title: oracle_toggle_title(!on),
+                        },
+                    );
+                    rebuild.0 = true;
                 }
             }
         } else if table.0.card(id).is_some_and(|c| c.is_expandable()) {
@@ -1533,6 +1568,7 @@ fn action_color(utility: Utility) -> Color {
     match utility {
         Utility::Exit => EXIT_CONFIRM_BG, // warm red — "this is the way out"
         Utility::StartOver => Color::srgb(0.62, 0.44, 0.24), // amber — a bigger, permanent wipe
+        Utility::ToggleOracle => Color::srgb(0.26, 0.34, 0.46), // slate blue — a quiet, reversible setting
     }
 }
 

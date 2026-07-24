@@ -8,6 +8,7 @@ use std::sync::{Arc, Mutex};
 
 use cardtable_model::{
     Arrangement, Board, BoardGame, CardId, CardKind, DropTarget, Outlook, PileId, Scene, SceneBody,
+    Utility, oracle_toggle_on,
 };
 
 use crate::sample_table;
@@ -233,7 +234,11 @@ impl BoardGame for CardTableGame {
     /// While a fight is up, the game draws it as a modal [`Scene`] (the arena); otherwise the felt.
     fn scene(&self, board: &Board, focus: PileId) -> Option<Scene> {
         let mut scene = crate::scene::scene(board, focus)?;
-        if let Some(arena) = crate::arena::find_arena(board)
+        // The doom oracle runs only when its System-deck toggle is on. Off (the default), the solver is never
+        // touched - no per-frame search, and every tile keeps its `Unknown` outlook, so no foresight badges.
+        // A stuck player flips it on to read the winnable lines, then off again; nothing else changes.
+        if oracle_enabled(board)
+            && let Some(arena) = crate::arena::find_arena(board)
             && let Ok(mut doom) = self.0.lock()
         {
             // A new fight is a new tree. A memo carried over from the last one would be an answer about a
@@ -401,6 +406,25 @@ fn combat_ready(board: &Board, place: PileId) -> bool {
             .any(|&c| board.card(c).map(|k| k.card_type()) == Some(t))
     };
     has("hero") && has("encounter")
+}
+
+/// Whether the doom oracle's System-deck toggle is currently on. The state lives nowhere but the toggle
+/// card's own title (written by the renderer), so this reads it straight back - no belief carried on the
+/// board, no setting duplicated. Absent card (e.g. an old save, or a headless board) reads as off.
+fn oracle_enabled(board: &Board) -> bool {
+    let Some(system) = top_deck(board, "System") else {
+        return false;
+    };
+    board
+        .pile(system)
+        .map(|p| p.cards())
+        .unwrap_or_default()
+        .into_iter()
+        .filter_map(|c| board.card(c))
+        .any(|c| {
+            c.kind() == CardKind::Utility(Utility::ToggleOracle)
+                && oracle_toggle_on(c.front_title())
+        })
 }
 
 fn top_deck(board: &Board, label: &str) -> Option<PileId> {
