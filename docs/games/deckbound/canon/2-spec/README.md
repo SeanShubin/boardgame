@@ -246,7 +246,13 @@ exists in code; the par-solver that consumes the envelope is the pending build o
 
 ---
 
-## 1. The Clash — *the tactical core* ✅
+## 1. The Clash — *the tactical core* — ⛔ SUPERSEDED
+
+> **SUPERSEDED (human-vetted 2026-07-24).** The shipped combat has no stance-triangle, edge, or Parry-steal:
+> a strike resolves as the step machine's **Interaction** — Target → Bid → Strike → Resolve (a tempo-flip
+> reach contest weighted by Finesse, then Might over the Grit bar) — not a four-card duel. This section is a
+> retired tactical core, kept only until it is rewritten. Canonical model:
+> [`combat-round-sequence.md`](../../combat-round-sequence.md).
 
 The atom of combat: two Actors **predicting each other** across a hidden, simultaneous
 mix-up played with cards. Design background:
@@ -1013,7 +1019,14 @@ phase.
 
 ---
 
-## 4. The battle — hold the front, break the line, deal from the back 🟡 *(**phase model**, 2026 — supersedes the attrition model; **code pending**. Three declared intentions, one Tempo contest, a five-round battle on a per-round Tempo budget, resolved over a fixed sub-phase schedule.)*
+## 4. The battle — hold the front, break the line, deal from the back — 🟡 ⛔ RESOLUTION SUPERSEDED
+
+> **The shape survives; the schedule does not (human-vetted 2026-07-24).** Formations, ranks (Vanguard /
+> Rearguard / Outrider), crossing, and the front/back intent ARE the shipped model's — but the round is
+> resolved as an **eight-step schedule** (Havoc / Withdraw / Skirmish / Crossing / Defensive Volley / Raid /
+> Assault / Advance), not the "five rounds on a per-round Tempo budget over a fixed sub-phase schedule" this
+> header and §4.6 describe. The "code pending" note is stale — the step machine shipped and is gated.
+> Canonical model: [`combat-round-sequence.md`](../../combat-round-sequence.md); this section awaits fold-in.
 
 > **History.** Superseded forms: front/back formation → cadence-pairing → lane assignment → the
 > **charge-and-gauntlet** → the **static-ranks** model (three ranks, two tiers, a Finesse crossing contest,
@@ -1583,7 +1596,13 @@ only to price the choice to group.)*
   beats the attacker** (weakest-link).
 - **Hoard X** = a one-card group of X one-Health bodies (swarm).
 
-### 4.6 The sub-phase schedule — resolution order, the pile, the pre-empt & disrupt 🟡 *(2026 — supersedes the six-phase / per-unit-lock model; the round resolves over the declared-intention schedule of §4; the per-sub-phase pile, `cast`/`resolve`, pre-empt, and disrupt carry forward; code pending)*
+### 4.6 The sub-phase schedule — resolution order, the pile, the pre-empt & disrupt — ⛔ SUPERSEDED
+
+> **SUPERSEDED (human-vetted 2026-07-24)** by the shipped **eight-step round** (see
+> [`combat-round-sequence.md`](../../combat-round-sequence.md)). The Intercept / Volley / Raid / Clash /
+> Breach sub-phase schedule and its per-sub-phase pile / `cast` / `resolve` / pre-empt / disrupt are a retired
+> resolution model; the step machine resolves each of eight steps on the spot, the moment its declare/reveal
+> wave completes. Awaits fold-in.
 
 > **Supersedes** the six named phases (Standoff / Fray / Volley / Breach / Reckoning / Lull) and the
 > **per-unit lock / freed-Vanguard charge.** The *spine* holds — a front shields a back, you reach the back

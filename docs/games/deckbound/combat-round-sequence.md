@@ -1,11 +1,16 @@
 # The combat round sequence
 
-> **CANON for the shipped combat model** (promoted from `needs-merge/`, 2026-07-22, after
-> review of the played combat). This is the authoritative step-by-step procedure for one
-> combat round as implemented in `crates/rules/src/combat` and asserted by the balance gate
-> (`cargo test -p deckbound-board --test diagonal`). Scope note: this documents the SHIPPED
-> board-combat model; it does not amend [`canon/2-spec`](canon/2-spec/README.md), the
-> aspirational full-game spec, whose combat sections describe a different (future) design.
+> **CANON for the shipped combat model** (promoted from `needs-merge/`, 2026-07-22). The authoritative
+> step-by-step procedure for one combat round as implemented in `crates/rules/src/combat` and asserted by the
+> balance gate (`cargo test -p deckbound-board --test diagonal`).
+>
+> **Human-vetted 2026-07-24 to SUPERSEDE `canon/2-spec`'s combat sections** — §1 (The Clash: stances /
+> triangle / edge / Parry) and §4 / §4.6 (the sub-phase schedule). Those describe a design the code
+> deliberately moved past; this is the canonical combat model, and where the two disagree this wins. Per
+> [`canon/0-source-of-truth.md`](canon/0-source-of-truth.md) a supersession is a human decision, and it has
+> been made — so this is no longer a parallel fork but a promotion pending merge. **Fold-in pending:** the
+> plan is to migrate this content INTO §4 of the Spec and retire this file to a pointer, so there is one
+> canon file again. Until then, the superseded Spec sections carry a banner pointing here.
 
 Status: **the shipped model**, 2026-07-21. The canonical step-by-step procedure
 for one combat round, written so a human can run it at a table - and it is what
@@ -134,6 +139,14 @@ reachable, never a different thing.
   is declared; the contest's *how hard* is computed (`reach_cards` - the fewest
   cards the target cannot afford to slip, else the minimum). Reaching is never
   a guaranteed hit.
+- **The scripted foe plays one greedy policy, and it never wastes a turn.** A
+  foe declares the max-disruption target (`foe_catch`) or crosses when the
+  one-ply read says to (`wants_to_cross`) - and it **passes rather than throw a
+  strike that would flip nothing**: a body whose Might cannot clear the target's
+  Grit keeps its tempo instead of squandering it, since sub-Grit damage is
+  discarded either way. A winnable verdict never rests on the enemy hitting what
+  it cannot hurt. (`foe_catch` returns `None` on a zero yield; enforced by
+  `foe_catch_passes_when_nothing_can_be_hurt`.)
 - **Area strikes never target and never retaliate.** An area (aoe) body's
   strike is *always* the untargeted regional sweep - every enemy in the tier it
   is aimed at, unevadable, one tempo. Width, never depth: a body you could not
