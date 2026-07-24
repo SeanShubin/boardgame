@@ -31,25 +31,27 @@ pub fn scene(board: &Board, _focus: PileId) -> Option<Scene> {
     let over = arena::outcome(board, arena).is_some();
     let tracks = build_tracks(w.step);
     let heading = format!("Round {}", w.round);
-    // The text under the heading DESCRIBES THE STEP (name + what it is), then names the one thing to do right
-    // now. The step description replaces the old "eight steps" reference card: you are told about the step you
-    // are on, not the whole schedule.
+    // The text under the heading is the STEP DIRECTIVE (locator + one imperative for the move to make),
+    // optionally followed by an action line for a gesture the visible cues can't convey. It replaces the old
+    // "eight steps" reference card: you are told what to do on the step you are on, not the whole schedule.
     let step_desc = format!("Step {k}/8 - {name}: {}", prompt_for(w.step));
+    // The action line names only what the VISIBLE cues cannot: a redundant "pick a ringed hero / order card"
+    // is cut (the animated green rings already say it), leaving the invisible gestures - the aim back-out, the
+    // commit-to-resolve, the fight-over exit.
     let action = if over {
         "The fight is decided - read the record, then leave.".to_string()
-    } else if w.focus.is_none() && arena::pending_decision(board, arena).is_some() {
-        "CHOOSE A HERO - click a ringed hero to give it orders.".to_string()
     } else if let Some(f) = w.focus {
         let name = &w.units[f].name;
         if w.aiming {
-            format!("{name}: TARGETING - click a lit enemy, or tap {name} again to back out.")
+            // Only the back-out gesture is invisible; the lit enemy tiles carry the rest.
+            format!("{name}: tap a lit enemy, or tap {name} to cancel.")
         } else {
-            format!("{name}: CHOOSE AN ORDER - one of the cards below.")
+            String::new() // the ringed order cards below say "pick one" on their own
         }
     } else if arena::pending_decision(board, arena).is_none() {
-        "All orders given - COMMIT resolves the step.".to_string()
+        "Ready - Commit resolves the step.".to_string()
     } else {
-        String::new()
+        String::new() // choosing a hero: the ringed heroes say it themselves
     };
     let prompt = if action.is_empty() {
         step_desc
@@ -141,31 +143,26 @@ fn build_tracks(step: Step) -> Vec<Track> {
     }]
 }
 
+/// The step's directive: **one imperative** naming the move to make, no rules footnotes. The step is already
+/// named by the locator this feeds into (`Step k/8 - <name>: ...`), so the text never repeats the name, and
+/// the caveats (costs, dodge windows, what bars what) are left to the log's resolution math - the prompt says
+/// what to do, not how it scores. An outcome clause survives only where the outcome IS the point (Crossing
+/// lands an outrider; Advance names the exposed target).
 fn prompt_for(step: Step) -> &'static str {
     match step {
-        Step::Havoc => {
-            "Havoc - point-blank: outriders strike the enemy rearguard they crossed to reach, and take fire from their hosts. Declare a target or hold."
-        }
-        Step::Withdraw => {
-            "Withdraw - each outrider may rejoin its own line, free; standing the havoc was the price."
-        }
+        Step::Havoc => "Strike the exposed rearguard with the outriders already behind their line.",
+        Step::Withdraw => "Pull your forward outriders home, or leave them out to keep striking.",
         Step::Skirmish => {
-            "Skirmish - the fast early trade, and the interception window: strike the body you predict will run. A line strike bars your own crossing."
+            "Strike the enemies about to cross; hold any of yours you mean to send across."
         }
         Step::Cross => {
-            "Crossing - a vanguard that declared no line strike may walk into their line, uncontested, landing as an Outrider."
+            "Send a vanguard that held its swing through the gap - it lands behind their line as an outrider."
         }
-        Step::Volley => {
-            "Defensive Volley - your rearguards fire on enemy outriders, one way, the opening blow only."
-        }
-        Step::Raid => {
-            "Raid - this round's arrivals strike a back-line target: the opening blow only, and it may still dodge."
-        }
-        Step::Assault => {
-            "Assault - all firepower to bear: rearguard fire, and every vanguard that held back swings here."
-        }
+        Step::Volley => "Fire on any enemy outrider now in your zone.",
+        Step::Raid => "Strike their back line with your fresh arrivals.",
+        Step::Assault => "Swing with everyone who saved their tempo.",
         Step::Advance => {
-            "Advance - a rearguard whose screen has fallen BY NOW is reachable: the same-round advance on a collapsed front."
+            "If their front has fallen, push through to the rearguard it was screening."
         }
     }
 }
