@@ -10,6 +10,9 @@
 //!   position. Lets a reader reconstruct exactly how the table was interacted with. *Truncated on launch.*
 //! - `combat-log.log` — **just the combat-log area**: the running transcript of exactly what the player read
 //!   there, and nothing else. *Truncated at the start of each battle*, so it always holds the last fight.
+//! - `frame-time.log` — the **frame-rate monitor**: a per-second FPS pulse that stays quiet while the app runs
+//!   smoothly and records every slowdown (`SLOW` windows, immediate `STALL` freezes), so "the app got slow"
+//!   can be checked against numbers. *Truncated on launch.* See [`FrameLog`].
 //!
 //! Added by the product via [`LoggingPlugin`]; a pure observer/system side-channel that never mutates
 //! the board or the UI.
@@ -87,6 +90,99 @@ impl CombatLog {
     }
 }
 
+// ---- frame-time.log: the frame-rate monitor -----------------------------------------------------
+
+/// A frame slower than this (30 fps) counts as a **hitch**.
+const HITCH_MS: f64 = 33.3;
+/// A one-second window whose average frame rate falls below this is flagged even without a single big hitch -
+/// the "everything got sluggish" case, as opposed to an isolated stutter.
+const FPS_FLOOR: f64 = 50.0;
+/// A single frame at least this long is a visible **freeze** - logged the instant it lands, not at window end.
+const STALL_MS: f64 = 250.0;
+/// How often a smooth (no-drop) window still prints a heartbeat, so a quiet log is "no drops", not "monitor died".
+const HEARTBEAT_S: f64 = 30.0;
+
+/// `frame-time.log` - the **frame-rate monitor**. It watches the real frame clock and stays quiet while the
+/// app runs smoothly, calling out every slowdown so a "the app got slow" report can be checked against numbers
+/// instead of a feeling: a single frame over [`STALL_MS`] is logged the instant it happens (a visible freeze);
+/// each one-second window with any hitch (> [`HITCH_MS`]) or a sub-[`FPS_FLOOR`] average is logged `SLOW`;
+/// otherwise a heartbeat every [`HEARTBEAT_S`] prints the smooth baseline. (Native only; a no-op on the web.)
+#[derive(Resource)]
+struct FrameLog {
+    log: Log,
+    /// The startup frame's delta is a load spike, not a drop; skip it and start the first window after it.
+    started: bool,
+    /// Real-clock seconds at the current window's start, and at the last line written (for the heartbeat).
+    window_start: f64,
+    last_report: f64,
+    /// This window's accumulators: frames seen, hitches (>= HITCH_MS), worst single frame, total time.
+    frames: u32,
+    slow: u32,
+    worst_ms: f64,
+    sum_ms: f64,
+}
+
+/// Watch the real frame clock; record drops to `frame-time.log` (see [`FrameLog`]). Uses `Time<Real>` so a
+/// paused or time-scaled virtual clock could never hide or fake a slowdown.
+fn log_frame_time(time: Res<Time<bevy::time::Real>>, mut fl: ResMut<FrameLog>) {
+    let now = time.elapsed().as_secs_f64();
+    if !fl.started {
+        fl.started = true;
+        fl.window_start = now;
+        fl.last_report = now;
+        fl.log.write(&format!(
+            "frame-time.log - frame-rate monitor (native only)\n\
+             thresholds: hitch >= {HITCH_MS:.0} ms (30 fps), window floor {FPS_FLOOR:.0} fps, \
+             stall >= {STALL_MS:.0} ms; heartbeat every {HEARTBEAT_S:.0}s\n\
+             a quiet log means no drops - only SLOW / STALL lines are problems.\n\n"
+        ));
+        return; // skip the startup frame's delta (a load spike, not a drop)
+    }
+
+    let dt_ms = time.delta().as_secs_f64() * 1000.0;
+
+    // A single freeze is an event in its own right: log it the instant it lands, not folded into a window.
+    if dt_ms >= STALL_MS {
+        fl.log.write(&format!(
+            "[t={now:8.1}s] STALL  one frame {dt_ms:.1} ms (~{:.0} fps)\n",
+            1000.0 / dt_ms.max(0.001)
+        ));
+    }
+
+    fl.frames += 1;
+    fl.sum_ms += dt_ms;
+    if dt_ms > fl.worst_ms {
+        fl.worst_ms = dt_ms;
+    }
+    if dt_ms >= HITCH_MS {
+        fl.slow += 1;
+    }
+
+    let span = now - fl.window_start;
+    if span >= 1.0 {
+        let fps = fl.frames as f64 / span;
+        let avg = fl.sum_ms / f64::from(fl.frames.max(1));
+        let problem = fl.slow > 0 || fps < FPS_FLOOR;
+        if problem || now - fl.last_report >= HEARTBEAT_S {
+            let (tag, worst, slow, frames) = (
+                if problem { "SLOW" } else { "ok  " },
+                fl.worst_ms,
+                fl.slow,
+                fl.frames,
+            );
+            fl.log.write(&format!(
+                "[t={now:8.1}s] {tag}  {fps:5.1} fps  avg {avg:5.1} ms  worst {worst:6.1} ms  hitches {slow}/{frames}\n"
+            ));
+            fl.last_report = now;
+        }
+        fl.window_start = now;
+        fl.frames = 0;
+        fl.slow = 0;
+        fl.worst_ms = 0.0;
+        fl.sum_ms = 0.0;
+    }
+}
+
 /// Records the two debug logs. Added by the product; native-only file output.
 pub struct LoggingPlugin;
 
@@ -95,6 +191,16 @@ impl Plugin for LoggingPlugin {
         app.insert_resource(PhysicalLog(Log::create("physical-cards.log")))
             .insert_resource(UiLog(Log::create("ui-state.log")))
             .insert_resource(CombatLog(Mutex::new(None)))
+            .insert_resource(FrameLog {
+                log: Log::create("frame-time.log"),
+                started: false,
+                window_start: 0.0,
+                last_report: 0.0,
+                frames: 0,
+                slow: 0,
+                worst_ms: 0.0,
+                sum_ms: 0.0,
+            })
             .add_systems(
                 Update,
                 (
@@ -106,6 +212,7 @@ impl Plugin for LoggingPlugin {
                     mirror_screen,
                     log_combat,
                     drain_drop_trace,
+                    log_frame_time,
                 ),
             )
             .add_observer(log_pickup)

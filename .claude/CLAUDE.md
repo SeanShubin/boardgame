@@ -71,6 +71,12 @@ truth for their exact contents):
 - `cardtable-debug.log` — a narrower drag/drop trace: each drag, each drop (cursor
   position + every row's hover state) and the resulting Active-row state, for
   debugging drop behaviour specifically. *Truncated on launch.*
+- `frame-time.log` — the frame-rate monitor: stays quiet while the app runs
+  smoothly and records slowdowns against the real frame clock. A `STALL` line is
+  a single frozen frame (>=250 ms); a `SLOW` line is a one-second window with a
+  hitch (a frame >=33 ms / below 30 fps) or a sub-50-fps average; an `ok`
+  heartbeat every 30s prints the smooth baseline so a quiet log means "no drops",
+  not "monitor off". First stop for "the app felt slow." *Truncated on launch.*
 
 The combat **simulator** (`cargo run -p boardgame --example fight`, a separate
 binary from the app) writes its own: `fight-screen.txt` (current screen) and
