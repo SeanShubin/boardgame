@@ -3629,10 +3629,12 @@ fn build_ui(
                     {
                         // Drilled into a place **cell**. Show its cards in a flex ROW - flexbox spaces them by
                         // their real size, so nothing overlaps whatever size they render at (an absolute row
-                        // overlapped once a card grew to medium). Just the cards: the fight is started from the
-                        // Fight control, which begins a **muster** - the heroes then wear the animated green
-                        // ring (see `animate_felt_rings`, driven by the board's selection) and a tap toggles
-                        // one in or out (see `is_muster_toggle` / the game's `tap_intention`).
+                        // overlapped once a card grew to medium). While the cell is **mustering** (its Fight
+                        // control opened a choose-heroes step, marked by a nested pile), every hero is a
+                        // *candidate*: a static selectable border says "choosable", and a tap picks it - a
+                        // picked (selected) hero drops the border for the animated green ring instead (see
+                        // `animate_felt_rings`, driven by the board's selection). Off a muster, plain cards.
+                        let mustering = tree.pile(zone).is_some_and(|p| !p.subpiles().is_empty());
                         surface
                             .spawn(Node {
                                 width: Val::Percent(100.0),
@@ -3649,14 +3651,27 @@ fn build_ui(
                             .with_children(|row| {
                                 for cid in tree.content_cards(zone) {
                                     let card = tree.card(cid).expect("cell card");
-                                    row.spawn((
-                                        Node {
-                                            flex_shrink: 0.0, // keep each card its natural size
-                                            ..default()
-                                        },
-                                        card_elevation(card),
-                                    ))
-                                    .with_children(|t| spawn_card(t, card));
+                                    // A choosable-but-not-yet-picked hero wears a static selectable border;
+                                    // a picked one is left to the animated ring (from its selection) instead.
+                                    let candidate = mustering
+                                        && card.card_type() == "hero"
+                                        && !tree.is_selected(cid);
+                                    let mut node = Node {
+                                        flex_shrink: 0.0, // keep each card its natural size
+                                        ..default()
+                                    };
+                                    if candidate {
+                                        node.border_radius = BorderRadius::all(CUE_RADIUS);
+                                    }
+                                    let mut item = row.spawn((node, card_elevation(card)));
+                                    if candidate {
+                                        item.insert(Outline::new(
+                                            Val::Px(2.0),
+                                            Val::Px(2.0),
+                                            SELECTABLE_CUE,
+                                        ));
+                                    }
+                                    item.with_children(|t| spawn_card(t, card));
                                 }
                             });
                     } else {

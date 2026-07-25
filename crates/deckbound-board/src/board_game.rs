@@ -251,9 +251,12 @@ impl BoardGame for CardTableGame {
                 ),
             ];
         }
-        // A place with an encounter and at least one hero present offers to start a fight (open the muster).
+        // A place with an encounter and at least one hero present offers to choose who fights (open the muster).
         if can_fight(board, focus) {
-            return vec![("Fight".to_string(), Intention::Fight { place: focus })];
+            return vec![(
+                "Choose Heroes".to_string(),
+                Intention::Fight { place: focus },
+            )];
         }
         // The day track (Progress zone) offers Advance Day.
         if top_deck(board, "Progress") == Some(focus) {
@@ -419,15 +422,12 @@ pub(crate) fn mustered(board: &Board, place: PileId) -> Vec<CardId> {
         .collect()
 }
 
-/// **Begin a muster** at `place`: raise the Muster marker and pre-select every hero present (everyone joins
-/// by default; tap to trim). The renderer rings the selected heroes, and the Fight control becomes
+/// **Begin a muster** at `place`: raise the Muster marker. Nobody is chosen yet - every hero present becomes
+/// a *candidate* (the renderer marks them all choosable), and you tap to pick. The Fight control becomes
 /// Confirm / Cancel (see [`CardTableGame::affordances`]).
 fn begin_muster(board: &mut Board, place: PileId) {
     if muster_of(board, place).is_none() {
         let _ = board.add_pile(place, "Muster");
-    }
-    for hero in heroes_at(board, place) {
-        let _ = board.select(hero);
     }
 }
 
@@ -451,17 +451,27 @@ fn end_muster(board: &mut Board, place: PileId) {
     }
 }
 
-/// The muster's status: the Confirm label to show and whether it is legal. A **solo** encounter is fought by
-/// exactly one hero; a **party** encounter by anyone present (at least one). Too few - or, for a solo, too
-/// many - keeps Confirm disabled, its label saying which.
+/// The muster's status: the Confirm label to show and whether it is legal, as a running count. A **solo**
+/// encounter is fought by exactly one hero; a **party** encounter by anyone present (at least one). The label
+/// reads "N/1 heroes chosen" and turns into "Fight with N ..." once legal; too few - or, for a solo, too many
+/// - keeps Confirm disabled.
 fn muster_status(board: &Board, place: PileId) -> (String, bool) {
     let n = mustered(board, place).len();
-    if n == 0 {
-        ("Pick a hero to fight".to_string(), false)
-    } else if is_solo_cell(board, place) && n > 1 {
-        (format!("Too many - pick 1 (chose {n})"), false)
+    let heroes = |k: usize| if k == 1 { "hero" } else { "heroes" };
+    if is_solo_cell(board, place) {
+        // Exactly one.
+        match n {
+            0 => ("Pick a hero to fight (0/1)".to_string(), false),
+            1 => ("Fight with 1/1 heroes".to_string(), true),
+            _ => (format!("Too many - pick 1 ({n}/1)"), false),
+        }
     } else {
-        (format!("Fight ({n})"), true)
+        // At least one; no cap.
+        if n == 0 {
+            ("Pick heroes to fight (0 chosen)".to_string(), false)
+        } else {
+            (format!("Fight with {n} {}", heroes(n)), true)
+        }
     }
 }
 
@@ -704,9 +714,9 @@ mod tests {
         );
     }
 
-    /// **A solo musters exactly one hero.** Fight opens the muster pre-choosing everyone present; a solo
-    /// wants one, so two is "too many" and Confirm is disabled until you tap one out. Confirm then fields
-    /// exactly the chosen hero.
+    /// **A solo musters exactly one hero.** Fight opens the muster with NOBODY chosen (every hero a
+    /// candidate); Confirm is disabled while zero (too few) or two+ (too many) are picked, and enabled at
+    /// exactly one. Confirm then fields exactly the chosen hero.
     #[test]
     fn a_solo_musters_one_hero() {
         let game = CardTableGame::default();
@@ -727,35 +737,47 @@ mod tests {
             );
         }
 
-        // Fight opens the muster, pre-choosing everyone. Two on a solo is too many: Confirm (0) is disabled.
+        // Fight opens the muster choosing nobody. Zero is too few: Confirm (0) is disabled.
         game.apply(&mut board, &[Intention::Fight { place: solo }]);
         assert!(is_mustering(&board, solo), "the cell is mustering");
+        assert!(mustered(&board, solo).is_empty(), "nobody chosen at first");
         assert_eq!(
-            mustered(&board, solo).len(),
-            2,
-            "both heroes chosen at first"
+            game.disabled_affordances(&board, solo),
+            vec![0],
+            "Confirm disabled: too few"
         );
+
+        let marksman = card_in(&board, solo, "Marksman").unwrap();
+        let raider = card_in(&board, solo, "Raider").unwrap();
+
+        // Tap the Raider in: one hero chosen, Confirm now enabled.
+        let toggle = game
+            .tap_intention(&board, raider)
+            .expect("a hero tap toggles the muster");
+        game.apply(&mut board, &[toggle]);
+        assert_eq!(mustered(&board, solo), vec![raider], "the Raider is chosen");
+        assert!(
+            game.disabled_affordances(&board, solo).is_empty(),
+            "Confirm enabled at one"
+        );
+
+        // Tap the Marksman in too: two on a solo is too many, Confirm disabled again.
+        let toggle = game.tap_intention(&board, marksman).expect("tap toggles");
+        game.apply(&mut board, &[toggle]);
+        assert_eq!(mustered(&board, solo).len(), 2, "both chosen now");
         assert_eq!(
             game.disabled_affordances(&board, solo),
             vec![0],
             "Confirm disabled: too many"
         );
 
-        // Tap the Marksman out: one hero chosen, Confirm now enabled.
-        let marksman = card_in(&board, solo, "Marksman").unwrap();
-        let raider = card_in(&board, solo, "Raider").unwrap();
-        let toggle = game
-            .tap_intention(&board, marksman)
-            .expect("a hero tap toggles the muster");
+        // Tap the Marksman back out: one chosen (the Raider), enabled.
+        let toggle = game.tap_intention(&board, marksman).expect("tap toggles");
         game.apply(&mut board, &[toggle]);
         assert_eq!(
             mustered(&board, solo),
             vec![raider],
             "only the Raider is chosen"
-        );
-        assert!(
-            game.disabled_affordances(&board, solo).is_empty(),
-            "Confirm enabled"
         );
 
         // Confirm opens the fight with exactly the Raider and clears the muster.
@@ -793,27 +815,28 @@ mod tests {
             }],
         );
 
+        // Fight opens the muster with nobody chosen (too few, Confirm disabled).
         game.apply(&mut board, &[Intention::Fight { place: solo }]);
-        assert_eq!(
-            mustered(&board, solo),
-            vec![raider],
-            "Fight pre-chooses the lone hero"
-        );
-
-        // Tap it out: nobody chosen, Confirm disabled (too few).
-        let toggle = game.tap_intention(&board, raider).expect("tap toggles");
-        game.apply(&mut board, &[toggle]);
-        assert!(mustered(&board, solo).is_empty(), "the hero is toggled out");
+        assert!(mustered(&board, solo).is_empty(), "nobody chosen at first");
         assert_eq!(
             game.disabled_affordances(&board, solo),
             vec![0],
             "Confirm disabled: too few"
         );
 
-        // Tap it back in.
+        // Tap it in.
         let toggle = game.tap_intention(&board, raider).expect("tap toggles");
         game.apply(&mut board, &[toggle]);
-        assert_eq!(mustered(&board, solo), vec![raider], "toggled back in");
+        assert_eq!(mustered(&board, solo), vec![raider], "the hero is chosen");
+        assert!(
+            game.disabled_affordances(&board, solo).is_empty(),
+            "Confirm enabled"
+        );
+
+        // Tap it back out.
+        let toggle = game.tap_intention(&board, raider).expect("tap toggles");
+        game.apply(&mut board, &[toggle]);
+        assert!(mustered(&board, solo).is_empty(), "toggled back out");
 
         // Cancel abandons the muster and clears the choice.
         game.apply(&mut board, &[Intention::MusterCancel { place: solo }]);

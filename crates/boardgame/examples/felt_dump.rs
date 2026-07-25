@@ -54,11 +54,11 @@ fn main() {
         );
     }
 
-    // Press Fight to open the muster: every hero present is pre-chosen (selected -> ringed). A solo wants
-    // one, so two is "too many" and Confirm is disabled. Tap the Marksman out to leave the Raider chosen.
+    // Press Fight to open the muster: nobody is chosen yet, every hero a candidate. Tap the Raider to pick
+    // it (selected -> ringed); the Marksman stays a candidate.
     game.apply(&mut board, &[Intention::Fight { place: solo }]);
-    let marksman = name_in(&board, solo, "Marksman").expect("the Marksman stands on the cell");
-    if let Some(toggle) = game.tap_intention(&board, marksman) {
+    let raider = name_in(&board, solo, "Raider").expect("the Raider stands on the cell");
+    if let Some(toggle) = game.tap_intention(&board, raider) {
         game.apply(&mut board, &[toggle]);
     }
 
