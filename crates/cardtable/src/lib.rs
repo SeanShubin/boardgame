@@ -1068,7 +1068,7 @@ fn pairing_action(table: &Board, dragged: CardId, target: CardId) -> Option<usiz
 /// Whether the held card `dragged` may legally be dropped on the card `target` — a **pairing** (the game
 /// declared one), or the legacy **inn equip** rule: inside a projection (the inn) a kit and a hero pair,
 /// i.e. exactly one of the two carries a recipe.
-fn can_drop_on_card(table: &Board, dragged: CardId, target: CardId) -> bool {
+pub(crate) fn can_drop_on_card(table: &Board, dragged: CardId, target: CardId) -> bool {
     if pairing_action(table, dragged, target).is_some() {
         return true;
     }
@@ -1127,7 +1127,7 @@ fn places_orthogonally_adjacent(table: &Board, a: PileId, b: PileId) -> bool {
 
 /// Whether the held card `dragged` may legally be dropped on the pile `target` — on the location **map**, a
 /// character's position copy moves to an **orthogonally adjacent** place (one step up/down/left/right).
-fn can_drop_on_pile(table: &Board, dragged: CardId, target: PileId) -> bool {
+pub(crate) fn can_drop_on_pile(table: &Board, dragged: CardId, target: PileId) -> bool {
     if top_deck(table, "Locations") != Some(table.focus_id()) {
         return false;
     }
@@ -1144,7 +1144,7 @@ fn can_drop_on_pile(table: &Board, dragged: CardId, target: PileId) -> bool {
 /// This used to also cue the Inn's pairing (a hero card was worth picking up only while a kit was on show to
 /// pair with, and vice versa) — which meant this game-agnostic renderer knew what a "kit" was. The Inn is
 /// gone (see its removal commit) and so is that seam violation.
-fn is_game_movable(table: &Board, id: CardId) -> bool {
+pub(crate) fn is_game_movable(table: &Board, id: CardId) -> bool {
     is_map_position(table, id)
 }
 

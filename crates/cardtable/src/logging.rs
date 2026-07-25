@@ -951,6 +951,43 @@ fn mirror_screen(
             String::new()
         }
     };
+
+    // ---- drop cues: which cards are pickable-for-a-game-action, and (mid-drag) which cards the held one may
+    // legally land on. This is the "which drop targets are activated" a headless reader needs - the same
+    // predicates the green glow is painted from (`is_game_movable` / `can_drop_on_card`), as data.
+    let movable: Vec<&str> = boxes
+        .iter()
+        .filter(|b| crate::is_game_movable(&table.0, b.id))
+        .map(|b| b.title.as_str())
+        .collect();
+    let dragged = dragging.0.and_then(|n| n.card());
+    let drop_block = {
+        let held = dragged
+            .and_then(|d| boxes.iter().find(|b| b.id == d))
+            .map(|b| b.title.as_str())
+            .unwrap_or("(nothing held)");
+        let targets: Vec<&str> = dragged
+            .map(|d| {
+                boxes
+                    .iter()
+                    .filter(|b| b.id != d && crate::can_drop_on_card(&table.0, d, b.id))
+                    .map(|b| b.title.as_str())
+                    .collect()
+            })
+            .unwrap_or_default();
+        let list = |v: &[&str]| {
+            if v.is_empty() {
+                "(none)".to_string()
+            } else {
+                v.join(", ")
+            }
+        };
+        format!(
+            "  movable (game action): {}\n  held: {held}\n  drop-target cards: {}",
+            list(&movable),
+            list(&targets)
+        )
+    };
     let cards_block: String = boxes
         .iter()
         .map(|b| {
@@ -1045,7 +1082,7 @@ fn mirror_screen(
     };
 
     let snapshot = format!(
-        "{header}\n\nEFFECTS (assignments, not animation frames):\n{effects_block}\n\nCARDS ({} on screen):\n{cards_block}\n{overlap_block}\n\nTEXT ({} strings attempted):\n{text_block}\n",
+        "{header}\n\nEFFECTS (assignments, not animation frames):\n{effects_block}\n\nDROP CUES:\n{drop_block}\n\nCARDS ({} on screen):\n{cards_block}\n{overlap_block}\n\nTEXT ({} strings attempted):\n{text_block}\n",
         boxes.len(),
         texts.len(),
     );
