@@ -759,6 +759,15 @@ fn on_click(
             on.propagate(false);
             return;
         }
+        // A **champion pick**: tapping a hero in the drilled-in solo cell seats it (or un-seats the one
+        // already seated) via the game's `tap_intention` - the combat-style choice, in place of a drag. Route
+        // it like a scene-tile tap and stop, so it does not also grow the card.
+        if is_seat_choice(&table.0, id) {
+            tap_request.0 = Some(id);
+            rebuild.0 = true;
+            on.propagate(false);
+            return;
+        }
         // In a **fan** (a card in a `Rows` zone, the header aside), a tap pulls that card to the front so
         // you can examine it — its full face rises above its overlapping neighbours. Everywhere else a tap
         // fires the card's utility action, grows/shrinks the card (cycle render size), fires a loose action,
@@ -1109,17 +1118,38 @@ fn is_map_position(table: &Board, id: CardId) -> bool {
     else {
         return false;
     };
-    let Some(loc) = top_deck(table, "Locations").and_then(|l| table.pile(l)) else {
+    // A hero **standing** on a place cell (its home is that cell) is a draggable map piece - dragging it
+    // marches to an adjacent cell. (A hero *seated* on a solo encounter is chosen and un-chosen by TAP, not
+    // drag, so it is not a movable piece; see `is_seat_choice` / the game's `seat_tap`.)
+    top_deck(table, "Locations")
+        .and_then(|loc| table.pile(loc))
+        .is_some_and(|loc| loc.subpiles().contains(&home))
+}
+
+/// Whether tapping `id` **chooses a champion** — a hero in the drilled-in **solo cell**, either standing
+/// (tap to seat it) or already seated (tap to un-seat). This gates which felt taps route to the game's
+/// `tap_intention` instead of the ordinary grow-to-examine, so a hero tapped on the map still examines. A
+/// solo cell is detected generically: the focused pile is a place cell (its parent is the Locations deck)
+/// holding an encounter that accepts a hero (a `pair_key` card). The hero belongs to that cell (standing) or
+/// its Seat sub-pile (seated).
+fn is_seat_choice(table: &Board, id: CardId) -> bool {
+    let focus = table.focus_id();
+    let is_place_cell = table.pile(focus).and_then(|p| p.parent()) == top_deck(table, "Locations");
+    let is_solo = table
+        .content_cards(focus)
+        .iter()
+        .any(|&c| table.card(c).and_then(|k| k.pair_key()).is_some());
+    if !is_place_cell || !is_solo {
+        return false;
+    }
+    let Some(home) = table
+        .card(id)
+        .filter(|c| c.card_type() == "hero")
+        .map(|c| c.home())
+    else {
         return false;
     };
-    // A hero **standing** on a place cell (home is that cell), or **seated** on its encounter (home is the
-    // cell's Seat sub-pile, whose parent is the cell). Both are map positions the player drags: march the
-    // standing one to an adjacent cell, drag the seated one off to un-seat it.
-    loc.subpiles().contains(&home)
-        || table
-            .pile(home)
-            .and_then(|p| p.parent())
-            .is_some_and(|par| loc.subpiles().contains(&par))
+    home == focus || table.pile(home).and_then(|p| p.parent()) == Some(focus)
 }
 
 /// Whether two place piles are **orthogonally adjacent** on the Locations grid — one step up, down, left,
@@ -1576,24 +1606,6 @@ fn on_node_drag_end(
             card_under_cursor(cursor, card, &geom).filter(|&t| can_drop_on_card(&table.0, card, t))
         {
             drop_request.0 = Some((card, DropTarget::Card(target)));
-            rebuild.0 = true;
-            return;
-        }
-        // A **seated** hero dropped anywhere but back onto its encounter un-seats. A seated hero lives in a
-        // sub-pile of the drilled-in cell (its Seat), so its home's parent is the focused cell; dropping it
-        // asks the game to un-seat it back onto that cell (`DropTarget::Pile(cell)` -> `Intention::Unseat`).
-        // (Dropping it onto the encounter is handled just above as a re-seat, so this is the "off" case.)
-        let focus = table.0.focus_id();
-        if table.0.card(card).is_some_and(|c| c.card_type() == "hero")
-            && table.0.pile(focus).and_then(|p| p.parent()) == top_deck(&table.0, "Locations")
-            && table
-                .0
-                .card(card)
-                .map(|c| c.home())
-                .and_then(|home| table.0.pile(home).and_then(|p| p.parent()))
-                == Some(focus)
-        {
-            drop_request.0 = Some((card, DropTarget::Pile(focus)));
             rebuild.0 = true;
             return;
         }
@@ -3585,18 +3597,15 @@ fn build_ui(
                     } else if tree.pile(zone).and_then(|p| p.parent())
                         == top_deck(tree, "Locations")
                     {
-                        // Drilled into a place **cell**. Lay its cards in a fixed row - no shove, so every
-                        // position is known and the seat cascade stays glued to its encounter (the shove-based
-                        // Free path would nudge the encounter out from under the seated hero). A **solo** cell
-                        // seats one hero on its encounter: the encounter is a `pair_key` target (a card that
-                        // accepts a hero), and the committed hero waits in the cell's one sub-pile (its Seat).
-                        // Render that hero cascaded one title strip below the encounter, drawn on top and
-                        // movable, so it is visible and can be dragged off to un-seat (see `on_node_drag_end`).
-                        // Standing heroes sit in the row, each movable - drag one onto the encounter to seat it.
-                        // All generic primitives (a `pair_key` card, a sub-pile holding a `hero`), not the
-                        // game's own names.
-                        let step = SMALL_W + MAP_CELL_GAP;
-                        let contents = tree.content_cards(zone);
+                        // Drilled into a place **cell**. Show its cards in a wrapped flex ROW - flexbox spaces
+                        // them by their real size, so nothing overlaps whatever size they render at (the old
+                        // fixed-step row overlapped once a card grew to medium). A **solo** cell is a champion
+                        // CHOICE: its encounter is a `pair_key` target (a card that accepts a hero), and one
+                        // hero may be committed to fight it. Heroes are drawn combat-style - tap one to seat it
+                        // (see `is_seat_choice` / `tap_intention`), the chosen (seated) hero ringed like a
+                        // settled combat tile, the rest ringed as selectable. Non-hero cards (the encounter,
+                        // rumors) grow to examine as usual. Generic primitives only (a `pair_key` card, a
+                        // sub-pile holding a `hero`), not the game's names.
                         let seat_pile = tree
                             .pile(zone)
                             .into_iter()
@@ -3608,42 +3617,59 @@ fn build_ui(
                             });
                         let seated =
                             seat_pile.and_then(|s| tree.content_cards(s).into_iter().next());
-                        let mut encounter_x: Option<f32> = None;
-                        for (i, cid) in contents.iter().copied().enumerate() {
-                            let x = i as f32 * step;
-                            let card = tree.card(cid).expect("cell content card");
-                            if card.pair_key().is_some() {
-                                encounter_x = Some(x);
-                            }
-                            let mut tile = surface.spawn(Node {
-                                position_type: PositionType::Absolute,
-                                left: Val::Px(x),
-                                top: Val::Px(0.0),
+                        // The cell's cards in reading order, then the seated champion last (it lives in the
+                        // Seat sub-pile, not the cell's content). Each entry carries whether it is the chosen one.
+                        let mut order: Vec<(CardId, bool)> = tree
+                            .content_cards(zone)
+                            .into_iter()
+                            .map(|c| (c, false))
+                            .collect();
+                        if let Some(h) = seated {
+                            order.push((h, true));
+                        }
+                        surface
+                            .spawn(Node {
+                                width: Val::Percent(100.0),
+                                flex_direction: FlexDirection::Row,
+                                align_items: AlignItems::FlexStart,
+                                justify_content: JustifyContent::Center,
+                                column_gap: Val::Px(MAP_CELL_GAP),
+                                margin: UiRect {
+                                    top: Val::Px(MAP_PAD),
+                                    ..default()
+                                },
                                 ..default()
-                            });
-                            tile.insert(card_elevation(card));
-                            // Heroes are draggable (to seat / rearrange); the encounter and any flavour cards
-                            // are fixed slots.
-                            if card.card_type() == "hero" {
-                                tile.insert(Movable(TableNode::Card(cid)));
-                            }
-                            tile.with_children(|t| spawn_card(t, card));
-                        }
-                        if let (Some(x), Some(hero_id)) = (encounter_x, seated) {
-                            let hcard = tree.card(hero_id).expect("seated hero card");
-                            surface
-                                .spawn((
-                                    Movable(TableNode::Card(hero_id)),
-                                    ZIndex(50),
-                                    Node {
-                                        position_type: PositionType::Absolute,
-                                        left: Val::Px(x),
-                                        top: Val::Px(TITLE_OFFSET),
+                            })
+                            .with_children(|row| {
+                                for (cid, chosen) in order {
+                                    let card = tree.card(cid).expect("cell card");
+                                    let is_hero = card.card_type() == "hero";
+                                    // A champion choice is ringed (the ring follows the node's border radius).
+                                    let mut node = Node {
+                                        flex_shrink: 0.0, // keep each card its natural size, never squeezed
                                         ..default()
-                                    },
-                                ))
-                                .with_children(|t| spawn_card(t, hcard));
-                        }
+                                    };
+                                    if is_hero {
+                                        node.border_radius = BorderRadius::all(CUE_RADIUS);
+                                    }
+                                    let mut item = row.spawn((node, card_elevation(card)));
+                                    if is_hero {
+                                        // The chosen one settled (thicker green), the rest selectable (thin).
+                                        // Not Movable - a tap seats, it is not dragged.
+                                        let (color, width) = if chosen {
+                                            (TARGET_CUE, 2.0)
+                                        } else {
+                                            (SELECTABLE_CUE, 1.0)
+                                        };
+                                        item.insert(Outline::new(
+                                            Val::Px(width),
+                                            Val::Px(2.0),
+                                            color,
+                                        ));
+                                    }
+                                    item.with_children(|t| spawn_card(t, card));
+                                }
+                            });
                     } else {
                         // The zone lays its contents out — one shared path for every layout. A **structured**
                         // layout (List / Grid) gets footprint-aware positions (`structured_positions`), so a

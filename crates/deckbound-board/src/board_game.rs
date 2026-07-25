@@ -69,10 +69,11 @@ pub enum Intention {
     /// March the hero map-position `position` to the adjacent place `to`.
     March { position: CardId, to: PileId },
     /// Seat `hero` on the solo encounter at `place` - commit it as the one hero that fights this lone
-    /// encounter. Swaps out any hero already seated (back to standing on the cell). See [`seat_hero`].
+    /// encounter (chosen by tapping it). Swaps out any hero already seated (back to standing on the cell).
+    /// See [`seat_hero`].
     Seat { hero: CardId, place: PileId },
-    /// Un-seat `hero` from the solo encounter at `place` - drag it off the encounter, back to standing on the
-    /// cell. The symmetric partner of [`Intention::Seat`]; see [`unseat_hero`].
+    /// Un-seat `hero` from the solo encounter at `place` - back to standing on the cell (tapping the seated
+    /// hero again). The symmetric partner of [`Intention::Seat`]; see [`unseat_hero`].
     Unseat { hero: CardId, place: PileId },
     /// Advance the day clock (stand the move-markers back up, lay a new Day Passed).
     AdvanceDay,
@@ -148,24 +149,9 @@ impl BoardGame for CardTableGame {
         onto: DropTarget,
     ) -> Option<Intention> {
         match onto {
-            // Drag a hero standing at a cell onto that cell's **solo encounter** card to SEAT it - commit it
-            // as the one hero that fights this lone encounter. (The only other card-onto-card rule was the
-            // Inn's equip pairing, and the Inn is gone.)
-            DropTarget::Card(onto) => {
-                let is = |c: CardId, t: &str| board.card(c).map(|k| k.card_type()) == Some(t);
-                if is(dragged, "hero")
-                    && is(onto, "encounter")
-                    && let Some(place) = board.card(onto).map(|c| c.home())
-                    && is_solo_cell(board, place)
-                    && board.content_cards(place).contains(&dragged)
-                {
-                    return Some(Intention::Seat {
-                        hero: dragged,
-                        place,
-                    });
-                }
-                None
-            }
+            // Seating is no longer a drag: a hero is chosen for a solo encounter by TAPPING it (see
+            // `tap_intention` / `seat_tap`), the combat-style pick. No card-onto-card drop remains.
+            DropTarget::Card(_) => None,
             DropTarget::Pile(dest) => {
                 // In the arena, a hero dropped onto the ground pile its move would land in stages the move
                 // (Cross / Withdraw) - position is EARNED, so the card walks at resolution, not at the drop.
@@ -181,17 +167,6 @@ impl BoardGame for CardTableGame {
                 // A character deck's label dropped back on the Heroes deck un-equips.
                 if top_deck(board, "Heroes") == Some(dest) && is_character_label(board, dragged) {
                     return Some(Intention::Unequip { label: dragged });
-                }
-                // A SEATED hero dragged back onto its own cell un-seats it - off the encounter, back to
-                // standing on the cell (the symmetric partner of the seat drop).
-                if board.card(dragged).map(|c| c.card_type()) == Some("hero")
-                    && seat_of(board, dest)
-                        .is_some_and(|s| board.content_cards(s).contains(&dragged))
-                {
-                    return Some(Intention::Unseat {
-                        hero: dragged,
-                        place: dest,
-                    });
                 }
                 // A hero's map position dropped onto an orthogonally-adjacent place marches there.
                 if can_march(board, dragged, dest) {
@@ -235,8 +210,13 @@ impl BoardGame for CardTableGame {
     }
 
     fn tap_intention(&self, board: &Board, card: CardId) -> Option<Intention> {
+        let Some(arena) = crate::arena::find_arena(board) else {
+            // No fight up: a tap on a hero in a solo cell **chooses** it as the champion for that lone
+            // encounter (or un-chooses the one already seated) - the combat-style pick that replaces dragging
+            // a hero onto the encounter.
+            return seat_tap(board, card);
+        };
         // While a fight is up, tapping a combatant edits the staged plan for the current step.
-        let arena = crate::arena::find_arena(board)?;
         // An action tile IS a card: tapping one is taking that choice. Its id reads back to the choice index,
         // so the WHAT beat flows through the same tap path as selecting a hero or a target - no button rail.
         if let Some(index) = crate::arena::action_choice_index(board, arena, card) {
@@ -424,6 +404,31 @@ fn unseat_hero(board: &mut Board, hero: CardId, place: PileId) {
     {
         let _ = board.remove_pile(seat);
     }
+}
+
+/// Interpret a **tap** on a hero while no fight is up: choose it as the champion for its solo cell, or
+/// un-choose the one already seated. A **standing** hero (its home is a solo cell) is seated; the **seated**
+/// hero (its home is that cell's Seat sub-pile) is un-seated. Any other tap means nothing here. This is the
+/// combat-style pick that replaced dragging a hero onto the encounter; the renderer only routes a tap here
+/// while drilled into the very cell (see the renderer's `is_seat_choice`), so a hero tapped on the map grows
+/// to examine as before.
+fn seat_tap(board: &Board, card: CardId) -> Option<Intention> {
+    let home = board
+        .card(card)
+        .filter(|c| c.card_type() == "hero")
+        .map(|c| c.home())?;
+    if is_solo_cell(board, home) {
+        return Some(Intention::Seat {
+            hero: card,
+            place: home,
+        });
+    }
+    // Otherwise it may be the seated hero (its home is the cell's Seat sub-pile): tap to un-seat.
+    board
+        .pile(home)
+        .and_then(|p| p.parent())
+        .filter(|&par| is_solo_cell(board, par))
+        .map(|place| Intention::Unseat { hero: card, place })
 }
 
 /// Whether `place` is a **solo cell** - a home-adjacent location whose encounter is a lone fight, not a party
@@ -686,16 +691,11 @@ mod tests {
             );
         }
 
-        // Seat the Marksman on the encounter: dropping it onto the encounter card yields a Seat intention.
-        let enc = board
-            .content_cards(solo)
-            .into_iter()
-            .find(|&c| board.card(c).map(|k| k.card_type()) == Some("encounter"))
-            .unwrap();
+        // Seat the Marksman: tapping a standing hero in a solo cell chooses it as the champion.
         let marksman = card_in(&board, solo, "Marksman").unwrap();
         let seat_intent = game
-            .drop_intention(&board, marksman, DropTarget::Card(enc))
-            .expect("a hero dropped on a solo encounter seats");
+            .tap_intention(&board, marksman)
+            .expect("tapping a standing hero in a solo cell seats it");
         game.apply(&mut board, &[seat_intent]);
         assert_eq!(
             seated_hero(&board, solo),
@@ -738,10 +738,10 @@ mod tests {
         );
     }
 
-    /// **Un-seating is the symmetric partner of seating.** Dragging a seated hero back onto its own cell
-    /// yields an Unseat intention that returns it to standing on the cell (off the encounter).
+    /// **Un-seating is the symmetric partner of seating.** Tapping the seated hero again returns it to
+    /// standing on the cell (off the encounter) - the toggle the combat-style pick gives for free.
     #[test]
-    fn dragging_a_seated_hero_onto_its_cell_unseats_it() {
+    fn tapping_the_seated_hero_again_unseats_it() {
         let game = CardTableGame::default();
         let mut board = game.opening();
         let locations = top_deck(&board, "Locations").unwrap();
@@ -755,13 +755,9 @@ mod tests {
                 to: solo,
             }],
         );
-        game.apply(
-            &mut board,
-            &[Intention::Seat {
-                hero: raider,
-                place: solo,
-            }],
-        );
+        // Tap to seat, then tap the seated hero to un-seat.
+        let seat = game.tap_intention(&board, raider).expect("tap seats");
+        game.apply(&mut board, &[seat]);
         assert_eq!(
             seated_hero(&board, solo),
             Some(raider),
@@ -769,8 +765,8 @@ mod tests {
         );
 
         let unseat = game
-            .drop_intention(&board, raider, DropTarget::Pile(solo))
-            .expect("a seated hero dropped on its own cell un-seats");
+            .tap_intention(&board, raider)
+            .expect("tapping the seated hero again un-seats it");
         game.apply(&mut board, &[unseat]);
         assert_eq!(seated_hero(&board, solo), None, "the seat is empty");
         assert!(

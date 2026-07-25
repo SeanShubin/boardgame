@@ -1,19 +1,19 @@
 //! **Headless felt dump** - drive the real card-table renderer with no window, no winit, no GPU, settle a
 //! chosen table state, and print `screen.txt` (the current-state log `mirror_screen` writes).
 //!
-//! The card-table UI is almost entirely math: a card's on-screen rect, which cards are movable, which drop
-//! targets a held card may land on - all of it is computed and logged. This harness lets that math be read
-//! back without a human at the window. It builds a **seated solo** position through the public `BoardGame`
-//! seam (march two heroes onto a lone-fight cell, seat one on its encounter), drills into that cell, then
-//! runs the actual `BoardGamePlugin` + `LoggingPlugin` for a few frames so the felt settles and the state
-//! log is written. Read the printed `screen.txt` to see the seated hero's rect, the CARDS list, and the
-//! DROP CUES block (which cards are movable / drop targets) - the same data the running app shows.
+//! The card-table UI is almost entirely math: a card's on-screen rect, which cards are movable, which cards
+//! overlap - all of it is computed and logged. This harness lets that math be read back without a human at
+//! the window. It builds a **champion-chosen solo** position through the public `BoardGame` seam (march two
+//! heroes onto a lone-fight cell, tap-seat one as its champion), drills into that cell, then runs the actual
+//! `BoardGamePlugin` + `LoggingPlugin` for a few frames so the felt settles and the state log is written.
+//! Read the printed `screen.txt` to see the cell laid out as a row (encounter, rumors, the heroes), each
+//! card's rect, and the `overlaps` line - the same data the running app shows.
 //!
 //! Run: `cargo run -p boardgame --example felt_dump`
 
 use bevy::prelude::*;
-use cardtable::{BoardGamePlugin, Dragging, LoggingPlugin, Table};
-use cardtable_model::{BoardGame, DropTarget, Node};
+use cardtable::{BoardGamePlugin, LoggingPlugin, Table};
+use cardtable_model::BoardGame;
 use deckbound_board::{CardTableGame, Intention};
 
 fn main() {
@@ -53,23 +53,16 @@ fn main() {
         );
     }
 
-    // Seat the Raider on the encounter via the same drop the GUI issues (drop hero onto the encounter card).
-    let enc = board
-        .pile(solo)
-        .unwrap()
-        .cards()
-        .into_iter()
-        .find(|&c| board.card(c).is_some_and(|k| k.card_type() == "encounter"))
-        .expect("the solo cell holds an encounter");
+    // Seat the Raider as the champion - the tap-to-choose the GUI now issues, applied straight as its
+    // intention (the renderer routes a hero tap in a solo cell to exactly this).
     let raider = name_in(&board, solo, "Raider").expect("the Raider stands on the cell");
-    let seat = game
-        .drop_intention(&board, raider, DropTarget::Card(enc))
-        .expect("a hero dropped on a solo encounter seats");
-    game.apply(&mut board, &[seat]);
-
-    // The standing Marksman - dragged onto the encounter below, to read back the drop cue it activates.
-    let marksman =
-        name_in(&board, solo, "Marksman").expect("the Marksman still stands on the cell");
+    game.apply(
+        &mut board,
+        &[Intention::Seat {
+            hero: raider,
+            place: solo,
+        }],
+    );
 
     // ---- 2. Drill into the solo cell so the felt shows that zone. ----
     board.focus(solo).expect("focus the solo cell");
@@ -109,14 +102,6 @@ fn main() {
     };
 
     let _ = std::fs::remove_file("screen.txt");
-    println!("========== SETTLED (nothing held) ==========");
-    println!("{}", settle(&mut app));
-
-    // Now stage the Marksman as the held card and settle again: the DROP CUES block should light up the
-    // encounter as a drop target (a hero may seat on it), proving drop-target activation is logged, not just
-    // visible. The same predicate the green glow uses (`can_drop_on_card`), read back as data.
-    app.insert_resource(Dragging(Some(Node::Card(marksman))));
-    let _ = std::fs::remove_file("screen.txt");
-    println!("\n========== HOLDING the Marksman ==========");
+    println!("========== SOLO CELL, Raider seated as champion ==========");
     println!("{}", settle(&mut app));
 }
