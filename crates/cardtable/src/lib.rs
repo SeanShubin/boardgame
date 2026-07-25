@@ -1107,9 +1107,17 @@ fn is_map_position(table: &Board, id: CardId) -> bool {
     else {
         return false;
     };
-    top_deck(table, "Locations")
-        .and_then(|loc| table.pile(loc))
-        .is_some_and(|loc| loc.subpiles().contains(&home))
+    let Some(loc) = top_deck(table, "Locations").and_then(|l| table.pile(l)) else {
+        return false;
+    };
+    // A hero **standing** on a place cell (home is that cell), or **seated** on its encounter (home is the
+    // cell's Seat sub-pile, whose parent is the cell). Both are map positions the player drags: march the
+    // standing one to an adjacent cell, drag the seated one off to un-seat it.
+    loc.subpiles().contains(&home)
+        || table
+            .pile(home)
+            .and_then(|p| p.parent())
+            .is_some_and(|par| loc.subpiles().contains(&par))
 }
 
 /// Whether two place piles are **orthogonally adjacent** on the Locations grid — one step up, down, left,
@@ -1566,6 +1574,24 @@ fn on_node_drag_end(
             card_under_cursor(cursor, card, &geom).filter(|&t| can_drop_on_card(&table.0, card, t))
         {
             drop_request.0 = Some((card, DropTarget::Card(target)));
+            rebuild.0 = true;
+            return;
+        }
+        // A **seated** hero dropped anywhere but back onto its encounter un-seats. A seated hero lives in a
+        // sub-pile of the drilled-in cell (its Seat), so its home's parent is the focused cell; dropping it
+        // asks the game to un-seat it back onto that cell (`DropTarget::Pile(cell)` -> `Intention::Unseat`).
+        // (Dropping it onto the encounter is handled just above as a re-seat, so this is the "off" case.)
+        let focus = table.0.focus_id();
+        if table.0.card(card).is_some_and(|c| c.card_type() == "hero")
+            && table.0.pile(focus).and_then(|p| p.parent()) == top_deck(&table.0, "Locations")
+            && table
+                .0
+                .card(card)
+                .map(|c| c.home())
+                .and_then(|home| table.0.pile(home).and_then(|p| p.parent()))
+                == Some(focus)
+        {
+            drop_request.0 = Some((card, DropTarget::Pile(focus)));
             rebuild.0 = true;
             return;
         }
@@ -3554,6 +3580,68 @@ fn build_ui(
                                     });
                                 }
                             });
+                    } else if tree.pile(zone).and_then(|p| p.parent())
+                        == top_deck(tree, "Locations")
+                    {
+                        // Drilled into a place **cell**. Lay its cards in a fixed row - no shove, so every
+                        // position is known and the seat cascade stays glued to its encounter (the shove-based
+                        // Free path would nudge the encounter out from under the seated hero). A **solo** cell
+                        // seats one hero on its encounter: the encounter is a `pair_key` target (a card that
+                        // accepts a hero), and the committed hero waits in the cell's one sub-pile (its Seat).
+                        // Render that hero cascaded one title strip below the encounter, drawn on top and
+                        // movable, so it is visible and can be dragged off to un-seat (see `on_node_drag_end`).
+                        // Standing heroes sit in the row, each movable - drag one onto the encounter to seat it.
+                        // All generic primitives (a `pair_key` card, a sub-pile holding a `hero`), not the
+                        // game's own names.
+                        let step = SMALL_W + MAP_CELL_GAP;
+                        let contents = tree.content_cards(zone);
+                        let seat_pile = tree
+                            .pile(zone)
+                            .into_iter()
+                            .flat_map(|p| p.subpiles())
+                            .find(|&s| {
+                                tree.content_cards(s)
+                                    .iter()
+                                    .any(|&c| tree.card(c).is_some_and(|k| k.card_type() == "hero"))
+                            });
+                        let seated =
+                            seat_pile.and_then(|s| tree.content_cards(s).into_iter().next());
+                        let mut encounter_x: Option<f32> = None;
+                        for (i, cid) in contents.iter().copied().enumerate() {
+                            let x = i as f32 * step;
+                            let card = tree.card(cid).expect("cell content card");
+                            if card.pair_key().is_some() {
+                                encounter_x = Some(x);
+                            }
+                            let mut tile = surface.spawn(Node {
+                                position_type: PositionType::Absolute,
+                                left: Val::Px(x),
+                                top: Val::Px(0.0),
+                                ..default()
+                            });
+                            tile.insert(card_elevation(card));
+                            // Heroes are draggable (to seat / rearrange); the encounter and any flavour cards
+                            // are fixed slots.
+                            if card.card_type() == "hero" {
+                                tile.insert(Movable(TableNode::Card(cid)));
+                            }
+                            tile.with_children(|t| spawn_card(t, card));
+                        }
+                        if let (Some(x), Some(hero_id)) = (encounter_x, seated) {
+                            let hcard = tree.card(hero_id).expect("seated hero card");
+                            surface
+                                .spawn((
+                                    Movable(TableNode::Card(hero_id)),
+                                    ZIndex(50),
+                                    Node {
+                                        position_type: PositionType::Absolute,
+                                        left: Val::Px(x),
+                                        top: Val::Px(TITLE_OFFSET),
+                                        ..default()
+                                    },
+                                ))
+                                .with_children(|t| spawn_card(t, hcard));
+                        }
                     } else {
                         // The zone lays its contents out — one shared path for every layout. A **structured**
                         // layout (List / Grid) gets footprint-aware positions (`structured_positions`), so a

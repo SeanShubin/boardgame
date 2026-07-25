@@ -547,6 +547,15 @@ fn log_layout(
             if a.pile.is_some() && a.pile == b.pile {
                 continue; // same-pile stack: intentional overlap, not an error
             }
+            // A card cascaded from a **nested** pile onto its parent's card is likewise an intentional
+            // stack: a hero seated in a cell's Seat sub-pile is drawn on the cell's encounter. Exempt a
+            // parent/child pile pair too (the drop target still surrounds the whole cascade).
+            if let (Some(pa), Some(pb)) = (a.pile, b.pile)
+                && (table.0.pile(pa).and_then(|p| p.parent()) == Some(pb)
+                    || table.0.pile(pb).and_then(|p| p.parent()) == Some(pa))
+            {
+                continue;
+            }
             let ox = (a.x + a.w).min(b.x + b.w) - a.x.max(b.x);
             let oy = (a.y + a.h).min(b.y + b.h) - a.y.max(b.y);
             if ox > 0.5 && oy > 0.5 {
@@ -747,6 +756,9 @@ fn log_click(
 struct ScreenBox {
     title: String,
     stack: Option<PileId>,
+    /// The parent of this box's stack pile, if any - so the overlap check can tell a **nested** cascade (a
+    /// hero seated in a cell's Seat sub-pile, drawn on the cell's encounter) from a real spill.
+    parent_stack: Option<PileId>,
     id: u64,
     x: f32,
     y: f32,
@@ -765,6 +777,13 @@ fn screen_overlaps(boxes: &[ScreenBox]) -> Vec<(String, String, f32, f32)> {
             let (a, b) = (&boxes[i], &boxes[j]);
             if a.id == b.id || (a.stack.is_some() && a.stack == b.stack) {
                 continue; // the same card twice, or an intentional stack
+            }
+            // A card cascaded from a nested pile onto its parent's card is also intentional: a seated hero
+            // (in a cell's Seat sub-pile) drawn on the cell's encounter. Exempt a parent/child stack pair.
+            if (a.stack.is_some() && a.stack == b.parent_stack)
+                || (b.stack.is_some() && b.stack == a.parent_stack)
+            {
+                continue;
             }
             let ox = (a.x + a.w).min(b.x + b.w) - a.x.max(b.x);
             let oy = (a.y + a.h).min(b.y + b.h) - a.y.max(b.y);
@@ -1010,6 +1029,10 @@ fn mirror_screen(
         .map(|b| ScreenBox {
             title: b.title.clone(),
             stack: b.pile,
+            parent_stack: b
+                .pile
+                .and_then(|p| table.0.pile(p))
+                .and_then(|z| z.parent()),
             id: b.id.0,
             x: b.x,
             y: b.y,
@@ -1256,6 +1279,7 @@ mod tests {
         ScreenBox {
             title: title.into(),
             stack: stack.map(PileId),
+            parent_stack: None,
             id: (x as u64) * 100_003 + (y as u64),
             x,
             y,
@@ -1299,6 +1323,20 @@ mod tests {
         assert!(
             screen_overlaps(&stack).is_empty(),
             "same-pile cards stack intentionally"
+        );
+
+        // A seated hero (its Seat sub-pile, id 8) cascaded on its cell's encounter (the cell, id 7): the
+        // Seat's parent IS the cell, so this nested cascade is intentional, not a spill.
+        let cascade = vec![
+            b("The Keep Duelist", Some(7), 0.0, 0.0, 100.0, 100.0),
+            ScreenBox {
+                parent_stack: Some(PileId(7)),
+                ..b("Raider", Some(8), 0.0, 26.0, 100.0, 100.0)
+            },
+        ];
+        assert!(
+            screen_overlaps(&cascade).is_empty(),
+            "a hero seated on its encounter is a nested cascade, not a spill"
         );
     }
 }
