@@ -71,6 +71,9 @@ pub enum Intention {
     /// Seat `hero` on the solo encounter at `place` - commit it as the one hero that fights this lone
     /// encounter. Swaps out any hero already seated (back to standing on the cell). See [`seat_hero`].
     Seat { hero: CardId, place: PileId },
+    /// Un-seat `hero` from the solo encounter at `place` - drag it off the encounter, back to standing on the
+    /// cell. The symmetric partner of [`Intention::Seat`]; see [`unseat_hero`].
+    Unseat { hero: CardId, place: PileId },
     /// Advance the day clock (stand the move-markers back up, lay a new Day Passed).
     AdvanceDay,
     /// Open a v2 fight at the combat-ready `place` (a stationed hero + an encounter).
@@ -104,6 +107,7 @@ impl BoardGame for CardTableGame {
                 Intention::Unequip { label } => unequip(board, label),
                 Intention::March { position, to } => march(board, position, to),
                 Intention::Seat { hero, place } => seat_hero(board, hero, place),
+                Intention::Unseat { hero, place } => unseat_hero(board, hero, place),
                 Intention::AdvanceDay => advance_day(board),
                 Intention::Fight { place } => {
                     crate::arena::open_fight(board, place);
@@ -178,6 +182,17 @@ impl BoardGame for CardTableGame {
                 if top_deck(board, "Heroes") == Some(dest) && is_character_label(board, dragged) {
                     return Some(Intention::Unequip { label: dragged });
                 }
+                // A SEATED hero dragged back onto its own cell un-seats it - off the encounter, back to
+                // standing on the cell (the symmetric partner of the seat drop).
+                if board.card(dragged).map(|c| c.card_type()) == Some("hero")
+                    && seat_of(board, dest)
+                        .is_some_and(|s| board.content_cards(s).contains(&dragged))
+                {
+                    return Some(Intention::Unseat {
+                        hero: dragged,
+                        place: dest,
+                    });
+                }
                 // A hero's map position dropped onto an orthogonally-adjacent place marches there.
                 if can_march(board, dragged, dest) {
                     return Some(Intention::March {
@@ -208,6 +223,7 @@ impl BoardGame for CardTableGame {
                 | Intention::Tap { .. }
                 | Intention::Choose { .. }
                 | Intention::Seat { .. }
+                | Intention::Unseat { .. }
         )
     }
 
@@ -396,6 +412,18 @@ pub(crate) fn seat_hero(board: &mut Board, hero: CardId, place: PileId) {
         let _ = board.move_card(resident, place, at);
     }
     let _ = board.move_card(hero, seat, 0);
+}
+
+/// Un-seat `hero` from `place`'s solo encounter: move it out of the Seat, back to standing on the cell, and
+/// drop the now-empty Seat pile. The inverse of [`seat_hero`].
+fn unseat_hero(board: &mut Board, hero: CardId, place: PileId) {
+    let at = board.pile(place).map_or(0, |p| p.cards().len());
+    let _ = board.move_card(hero, place, at);
+    if let Some(seat) = seat_of(board, place)
+        && board.content_cards(seat).is_empty()
+    {
+        let _ = board.remove_pile(seat);
+    }
 }
 
 /// Whether `place` is a **solo cell** - a home-adjacent location whose encounter is a lone fight, not a party
@@ -707,6 +735,47 @@ mod tests {
             fielded,
             vec!["Raider".to_string()],
             "the solo is fought by the one seated hero"
+        );
+    }
+
+    /// **Un-seating is the symmetric partner of seating.** Dragging a seated hero back onto its own cell
+    /// yields an Unseat intention that returns it to standing on the cell (off the encounter).
+    #[test]
+    fn dragging_a_seated_hero_onto_its_cell_unseats_it() {
+        let game = CardTableGame::default();
+        let mut board = game.opening();
+        let locations = top_deck(&board, "Locations").unwrap();
+        let home = board.pile(locations).unwrap().subpiles()[4];
+        let solo = board.pile(locations).unwrap().subpiles()[1];
+        let raider = card_in(&board, home, "Raider").unwrap();
+        game.apply(
+            &mut board,
+            &[Intention::March {
+                position: raider,
+                to: solo,
+            }],
+        );
+        game.apply(
+            &mut board,
+            &[Intention::Seat {
+                hero: raider,
+                place: solo,
+            }],
+        );
+        assert_eq!(
+            seated_hero(&board, solo),
+            Some(raider),
+            "the Raider is seated"
+        );
+
+        let unseat = game
+            .drop_intention(&board, raider, DropTarget::Pile(solo))
+            .expect("a seated hero dropped on its own cell un-seats");
+        game.apply(&mut board, &[unseat]);
+        assert_eq!(seated_hero(&board, solo), None, "the seat is empty");
+        assert!(
+            card_in(&board, solo, "Raider").is_some(),
+            "the Raider is back standing on the cell"
         );
     }
 
