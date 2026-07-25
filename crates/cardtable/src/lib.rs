@@ -393,8 +393,21 @@ pub struct BuildInfo {
 
 // ---- systems ------------------------------------------------------------
 
-fn setup_camera(mut commands: Commands) {
-    commands.spawn(Camera2d);
+fn setup_camera(mut commands: Commands, windows: Query<(), With<bevy::window::PrimaryWindow>>) {
+    if windows.is_empty() {
+        // Headless (no window): UI is only laid out *for a camera*, so give it one with a viewport but no
+        // color target. This lets a headless harness drive the real app - build the felt, settle it, let
+        // `mirror_screen` write screen.txt - with no window, image, or GPU. Production always has a window,
+        // so this branch is never taken there.
+        commands.spawn((
+            Camera2d,
+            bevy::camera::RenderTarget::None {
+                size: UVec2::new(1320, 860),
+            },
+        ));
+    } else {
+        commands.spawn(Camera2d);
+    }
 }
 
 /// Inject the **System deck** — a regular drill-in pile on the table: click it to enter its zone, then
