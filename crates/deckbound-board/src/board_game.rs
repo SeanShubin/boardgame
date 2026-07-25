@@ -68,13 +68,14 @@ pub enum Intention {
     Unequip { label: CardId },
     /// March the hero map-position `position` to the adjacent place `to`.
     March { position: CardId, to: PileId },
-    /// Seat `hero` on the solo encounter at `place` - commit it as the one hero that fights this lone
-    /// encounter (chosen by tapping it). Swaps out any hero already seated (back to standing on the cell).
-    /// See [`seat_hero`].
-    Seat { hero: CardId, place: PileId },
-    /// Un-seat `hero` from the solo encounter at `place` - back to standing on the cell (tapping the seated
-    /// hero again). The symmetric partner of [`Intention::Seat`]; see [`unseat_hero`].
-    Unseat { hero: CardId, place: PileId },
+    /// Toggle `hero`'s participation in the muster in progress - tapping a ringed hero in / out of the party
+    /// that will fight this location's encounter. See [`toggle_muster`].
+    ToggleMuster { hero: CardId },
+    /// Confirm the muster at `place`: open the fight with exactly the heroes chosen (the selected ones). Only
+    /// offered when the count is legal. See [`muster_status`].
+    MusterConfirm { place: PileId },
+    /// Abandon the muster at `place`: clear the choice and leave the location as it was. See [`end_muster`].
+    MusterCancel { place: PileId },
     /// Advance the day clock (stand the move-markers back up, lay a new Day Passed).
     AdvanceDay,
     /// Open a v2 fight at the combat-ready `place` (a stationed hero + an encounter).
@@ -107,12 +108,14 @@ impl BoardGame for CardTableGame {
             match *intention {
                 Intention::Unequip { label } => unequip(board, label),
                 Intention::March { position, to } => march(board, position, to),
-                Intention::Seat { hero, place } => seat_hero(board, hero, place),
-                Intention::Unseat { hero, place } => unseat_hero(board, hero, place),
-                Intention::AdvanceDay => advance_day(board),
-                Intention::Fight { place } => {
+                Intention::ToggleMuster { hero } => toggle_muster(board, hero),
+                Intention::MusterConfirm { place } => {
                     crate::arena::open_fight(board, place);
+                    end_muster(board, place);
                 }
+                Intention::MusterCancel { place } => end_muster(board, place),
+                Intention::AdvanceDay => advance_day(board),
+                Intention::Fight { place } => begin_muster(board, place),
                 Intention::Assign { unit, to } => crate::arena::assign(board, unit, to),
                 Intention::Tap { card } => crate::arena::handle_tap(board, card),
                 Intention::Choose { index } => crate::arena::choose(board, index),
@@ -197,8 +200,9 @@ impl BoardGame for CardTableGame {
             Intention::Assign { .. }
                 | Intention::Tap { .. }
                 | Intention::Choose { .. }
-                | Intention::Seat { .. }
-                | Intention::Unseat { .. }
+                | Intention::ToggleMuster { .. }
+                | Intention::Fight { .. }
+                | Intention::MusterCancel { .. }
         )
     }
 
@@ -211,10 +215,8 @@ impl BoardGame for CardTableGame {
 
     fn tap_intention(&self, board: &Board, card: CardId) -> Option<Intention> {
         let Some(arena) = crate::arena::find_arena(board) else {
-            // No fight up: a tap on a hero in a solo cell **chooses** it as the champion for that lone
-            // encounter (or un-chooses the one already seated) - the combat-style pick that replaces dragging
-            // a hero onto the encounter.
-            return seat_tap(board, card);
+            // No fight up: a tap on a hero whose cell is mustering toggles it in / out of the chosen party.
+            return muster_tap(board, card);
         };
         // While a fight is up, tapping a combatant edits the staged plan for the current step.
         // An action tile IS a card: tapping one is taking that choice. Its id reads back to the choice index,
@@ -238,13 +240,33 @@ impl BoardGame for CardTableGame {
                 ("Cancel battle".to_string(), Intention::CancelFight),
             ];
         }
-        // A combat-ready place (a stationed hero + an encounter) offers a fight.
-        if combat_ready(board, focus) {
+        // A place mid-muster offers Confirm (its label saying whether the party is legal) and Cancel.
+        if is_mustering(board, focus) {
+            let (confirm, _legal) = muster_status(board, focus);
+            return vec![
+                (confirm, Intention::MusterConfirm { place: focus }),
+                (
+                    "Cancel".to_string(),
+                    Intention::MusterCancel { place: focus },
+                ),
+            ];
+        }
+        // A place with an encounter and at least one hero present offers to start a fight (open the muster).
+        if can_fight(board, focus) {
             return vec![("Fight".to_string(), Intention::Fight { place: focus })];
         }
         // The day track (Progress zone) offers Advance Day.
         if top_deck(board, "Progress") == Some(focus) {
             return vec![("Advance Day".to_string(), Intention::AdvanceDay)];
+        }
+        Vec::new()
+    }
+
+    /// Mid-muster, the Confirm control (index 0) is disabled while the chosen party is illegal (too few, or
+    /// for a solo too many) - it stays visible, its label saying why (see [`muster_status`]).
+    fn disabled_affordances(&self, board: &Board, focus: PileId) -> Vec<usize> {
+        if is_mustering(board, focus) && !muster_status(board, focus).1 {
+            return vec![0];
         }
         Vec::new()
     }
@@ -364,71 +386,94 @@ fn march(board: &mut Board, position: CardId, to: PileId) {
     }
 }
 
-/// The one-hero **Seat** on a place's solo encounter, if it has been created (it is made on the first seating
-/// and removed when it empties, so an empty cell carries no seat).
-pub(crate) fn seat_of(board: &Board, place: PileId) -> Option<PileId> {
+/// The **Muster** marker on a place: an (empty) sub-pile that exists only while the player is choosing who
+/// fights this location's encounter. Created by [`begin_muster`], removed by [`end_muster`]; its presence is
+/// the whole "we are choosing" mode. `None` when the place is not mustering.
+pub(crate) fn muster_of(board: &Board, place: PileId) -> Option<PileId> {
     board
         .pile(place)?
         .subpiles()
         .into_iter()
-        .find(|&s| board.pile(s).map(|p| p.label.as_str()) == Some("Seat"))
+        .find(|&s| board.pile(s).map(|p| p.label.as_str()) == Some("Muster"))
 }
 
-/// The hero currently seated on `place`'s solo encounter - the one committed to fight it - or `None`.
-pub(crate) fn seated_hero(board: &Board, place: PileId) -> Option<CardId> {
-    seat_of(board, place).and_then(|s| board.content_cards(s).into_iter().next())
+/// Whether `place` is currently mustering (choosing its party).
+pub(crate) fn is_mustering(board: &Board, place: PileId) -> bool {
+    muster_of(board, place).is_some()
 }
 
-/// **Seat `hero` on `place`'s solo encounter** - commit it as the one hero that fights this lone encounter.
-/// Any hero already seated is swapped out first, back to standing on the cell (un-seating never costs a move).
-/// The Seat pile is made on demand and holds exactly one hero.
-pub(crate) fn seat_hero(board: &mut Board, hero: CardId, place: PileId) {
-    let Some(seat) = seat_of(board, place).or_else(|| board.add_pile(place, "Seat").ok()) else {
-        return;
-    };
-    // Swap out whoever is seated: back to the cell, still standing there, just no longer committed.
-    for resident in board.content_cards(seat) {
-        let at = board.pile(place).map_or(0, |p| p.cards().len());
-        let _ = board.move_card(resident, place, at);
+/// The heroes standing at `place`.
+fn heroes_at(board: &Board, place: PileId) -> Vec<CardId> {
+    board
+        .content_cards(place)
+        .into_iter()
+        .filter(|&c| board.card(c).map(|k| k.card_type()) == Some("hero"))
+        .collect()
+}
+
+/// The heroes at `place` currently **chosen** for the fight - the selected (ringed) ones.
+pub(crate) fn mustered(board: &Board, place: PileId) -> Vec<CardId> {
+    heroes_at(board, place)
+        .into_iter()
+        .filter(|&c| board.is_selected(c))
+        .collect()
+}
+
+/// **Begin a muster** at `place`: raise the Muster marker and pre-select every hero present (everyone joins
+/// by default; tap to trim). The renderer rings the selected heroes, and the Fight control becomes
+/// Confirm / Cancel (see [`CardTableGame::affordances`]).
+fn begin_muster(board: &mut Board, place: PileId) {
+    if muster_of(board, place).is_none() {
+        let _ = board.add_pile(place, "Muster");
     }
-    let _ = board.move_card(hero, seat, 0);
-}
-
-/// Un-seat `hero` from `place`'s solo encounter: move it out of the Seat, back to standing on the cell, and
-/// drop the now-empty Seat pile. The inverse of [`seat_hero`].
-fn unseat_hero(board: &mut Board, hero: CardId, place: PileId) {
-    let at = board.pile(place).map_or(0, |p| p.cards().len());
-    let _ = board.move_card(hero, place, at);
-    if let Some(seat) = seat_of(board, place)
-        && board.content_cards(seat).is_empty()
-    {
-        let _ = board.remove_pile(seat);
+    for hero in heroes_at(board, place) {
+        let _ = board.select(hero);
     }
 }
 
-/// Interpret a **tap** on a hero while no fight is up: choose it as the champion for its solo cell, or
-/// un-choose the one already seated. A **standing** hero (its home is a solo cell) is seated; the **seated**
-/// hero (its home is that cell's Seat sub-pile) is un-seated. Any other tap means nothing here. This is the
-/// combat-style pick that replaced dragging a hero onto the encounter; the renderer only routes a tap here
-/// while drilled into the very cell (see the renderer's `is_seat_choice`), so a hero tapped on the map grows
-/// to examine as before.
-fn seat_tap(board: &Board, card: CardId) -> Option<Intention> {
+/// Toggle one hero in / out of the muster (tapping a ringed hero).
+fn toggle_muster(board: &mut Board, hero: CardId) {
+    if board.is_selected(hero) {
+        board.deselect(hero);
+    } else {
+        let _ = board.select(hero);
+    }
+}
+
+/// **End the muster** at `place`: drop the marker and clear every selection. Called on Confirm (after the
+/// fight has opened) and on Cancel.
+fn end_muster(board: &mut Board, place: PileId) {
+    if let Some(m) = muster_of(board, place) {
+        let _ = board.remove_pile(m);
+    }
+    for card in board.selection().to_vec() {
+        board.deselect(card);
+    }
+}
+
+/// The muster's status: the Confirm label to show and whether it is legal. A **solo** encounter is fought by
+/// exactly one hero; a **party** encounter by anyone present (at least one). Too few - or, for a solo, too
+/// many - keeps Confirm disabled, its label saying which.
+fn muster_status(board: &Board, place: PileId) -> (String, bool) {
+    let n = mustered(board, place).len();
+    if n == 0 {
+        ("Pick a hero to fight".to_string(), false)
+    } else if is_solo_cell(board, place) && n > 1 {
+        (format!("Too many - pick 1 (chose {n})"), false)
+    } else {
+        (format!("Fight ({n})"), true)
+    }
+}
+
+/// Interpret a **tap** on a hero while no fight is up: if its cell is mustering, toggle it in / out of the
+/// party. The renderer only routes a tap here while drilled into a mustering cell (see `is_muster_toggle`), so
+/// a hero tapped elsewhere is unaffected.
+fn muster_tap(board: &Board, card: CardId) -> Option<Intention> {
     let home = board
         .card(card)
         .filter(|c| c.card_type() == "hero")
         .map(|c| c.home())?;
-    if is_solo_cell(board, home) {
-        return Some(Intention::Seat {
-            hero: card,
-            place: home,
-        });
-    }
-    // Otherwise it may be the seated hero (its home is the cell's Seat sub-pile): tap to un-seat.
-    board
-        .pile(home)
-        .and_then(|p| p.parent())
-        .filter(|&par| is_solo_cell(board, par))
-        .map(|place| Intention::Unseat { hero: card, place })
+    is_mustering(board, home).then_some(Intention::ToggleMuster { hero: card })
 }
 
 /// Whether `place` is a **solo cell** - a home-adjacent location whose encounter is a lone fight, not a party
@@ -496,24 +541,17 @@ fn places_adjacent(board: &Board, a: PileId, b: PileId) -> bool {
 
 // ---- fixed-zone lookups by label ------------------------------------------------------------------
 
-/// A place is combat-ready when it holds both a stationed hero and an encounter.
-fn combat_ready(board: &Board, place: PileId) -> bool {
+/// Whether `place` can start a fight: it holds an encounter and at least one hero to send. Whether the
+/// eventual party is legal (a solo wants exactly one, a party at least one) is settled during the muster;
+/// this only gates the Fight control that opens it.
+fn can_fight(board: &Board, place: PileId) -> bool {
     let cards = board.content_cards(place);
     let has = |t: &str| {
         cards
             .iter()
             .any(|&c| board.card(c).map(|k| k.card_type()) == Some(t))
     };
-    if !has("encounter") {
-        return false;
-    }
-    if is_solo_cell(board, place) {
-        // A solo is ready only once a hero is SEATED on its encounter (the one who will fight it).
-        seated_hero(board, place).is_some()
-    } else {
-        // A party fight is ready as soon as any hero stands at the cell - everyone present fields.
-        has("hero")
-    }
+    has("encounter") && has("hero")
 }
 
 /// Whether the doom oracle's System-deck toggle is currently on. The state lives nowhere but the toggle
@@ -556,16 +594,20 @@ mod tests {
         let card = CardId(1);
         let pile = PileId(1);
 
-        // Staging: freely revisable in place, nothing revealed.
+        // Staging: freely revisable in place, nothing revealed. Opening a muster and toggling / cancelling it
+        // are staging too - the fight has not begun, and Cancel undoes it in place.
         assert!(!game.is_checkpoint(&Intention::Tap { card }));
         assert!(!game.is_checkpoint(&Intention::Assign {
             unit: card,
             to: pile
         }));
+        assert!(!game.is_checkpoint(&Intention::Fight { place: pile }));
+        assert!(!game.is_checkpoint(&Intention::ToggleMuster { hero: card }));
+        assert!(!game.is_checkpoint(&Intention::MusterCancel { place: pile }));
 
-        // Commits: the points of no return.
+        // Commits: the points of no return. Confirming the muster opens the fight.
         assert!(game.is_checkpoint(&Intention::Commit));
-        assert!(game.is_checkpoint(&Intention::Fight { place: pile }));
+        assert!(game.is_checkpoint(&Intention::MusterConfirm { place: pile }));
         assert!(game.is_checkpoint(&Intention::March {
             position: card,
             to: pile
@@ -662,20 +704,18 @@ mod tests {
         );
     }
 
-    /// A **solo cell holds one hero**: marching a second in swaps the resident back to the newcomer's origin,
-    /// so a lone puzzle can never be ganged up on. (Party cells - the corners - are not capped.)
+    /// **A solo musters exactly one hero.** Fight opens the muster pre-choosing everyone present; a solo
+    /// wants one, so two is "too many" and Confirm is disabled until you tap one out. Confirm then fields
+    /// exactly the chosen hero.
     #[test]
-    /// **Locations are uncapped; the solo limit lives on the encounter.** Two heroes may stand on a solo
-    /// cell freely; seating one on its encounter commits exactly that hero to the fight, and seating a second
-    /// swaps the first back onto the cell.
-    fn a_solo_is_fought_by_the_seated_hero_and_seating_swaps() {
+    fn a_solo_musters_one_hero() {
         let game = CardTableGame::default();
         let mut board = game.opening();
         let locations = top_deck(&board, "Locations").unwrap();
         let home = board.pile(locations).unwrap().subpiles()[4]; // Ashfen (centre)
         let solo = board.pile(locations).unwrap().subpiles()[1]; // Cinderwatch Keep, an orthogonal solo
 
-        // BOTH heroes march onto the solo cell - no cap, no swap.
+        // BOTH heroes march onto the solo cell - locations are uncapped.
         for name in ["Marksman", "Raider"] {
             let h = card_in(&board, home, name).unwrap();
             game.apply(
@@ -685,45 +725,43 @@ mod tests {
                     to: solo,
                 }],
             );
-            assert!(
-                card_in(&board, solo, name).is_some(),
-                "{name} stands on the cell"
-            );
         }
 
-        // Seat the Marksman: tapping a standing hero in a solo cell chooses it as the champion.
-        let marksman = card_in(&board, solo, "Marksman").unwrap();
-        let seat_intent = game
-            .tap_intention(&board, marksman)
-            .expect("tapping a standing hero in a solo cell seats it");
-        game.apply(&mut board, &[seat_intent]);
+        // Fight opens the muster, pre-choosing everyone. Two on a solo is too many: Confirm (0) is disabled.
+        game.apply(&mut board, &[Intention::Fight { place: solo }]);
+        assert!(is_mustering(&board, solo), "the cell is mustering");
         assert_eq!(
-            seated_hero(&board, solo),
-            Some(marksman),
-            "the Marksman is seated"
+            mustered(&board, solo).len(),
+            2,
+            "both heroes chosen at first"
+        );
+        assert_eq!(
+            game.disabled_affordances(&board, solo),
+            vec![0],
+            "Confirm disabled: too many"
         );
 
-        // Seat the Raider: it swaps the Marksman back onto the cell.
+        // Tap the Marksman out: one hero chosen, Confirm now enabled.
+        let marksman = card_in(&board, solo, "Marksman").unwrap();
         let raider = card_in(&board, solo, "Raider").unwrap();
-        game.apply(
-            &mut board,
-            &[Intention::Seat {
-                hero: raider,
-                place: solo,
-            }],
-        );
+        let toggle = game
+            .tap_intention(&board, marksman)
+            .expect("a hero tap toggles the muster");
+        game.apply(&mut board, &[toggle]);
         assert_eq!(
-            seated_hero(&board, solo),
-            Some(raider),
-            "the Raider is now seated"
+            mustered(&board, solo),
+            vec![raider],
+            "only the Raider is chosen"
         );
         assert!(
-            card_in(&board, solo, "Marksman").is_some(),
-            "the swapped-out Marksman is back standing on the cell"
+            game.disabled_affordances(&board, solo).is_empty(),
+            "Confirm enabled"
         );
 
-        // Open the fight: a solo fields exactly the seated hero (the Raider), not both present heroes.
-        let arena = crate::arena::open_fight(&mut board, solo).expect("the solo is combat-ready");
+        // Confirm opens the fight with exactly the Raider and clears the muster.
+        game.apply(&mut board, &[Intention::MusterConfirm { place: solo }]);
+        assert!(!is_mustering(&board, solo), "the muster is cleared");
+        let arena = crate::arena::find_arena(&board).expect("a fight opened");
         let fielded: Vec<String> = crate::arena::wave(&board, arena)
             .unwrap()
             .units
@@ -734,14 +772,13 @@ mod tests {
         assert_eq!(
             fielded,
             vec!["Raider".to_string()],
-            "the solo is fought by the one seated hero"
+            "the solo is fought by the one chosen hero"
         );
     }
 
-    /// **Un-seating is the symmetric partner of seating.** Tapping the seated hero again returns it to
-    /// standing on the cell (off the encounter) - the toggle the combat-style pick gives for free.
+    /// **Tapping a hero toggles it in and out of the muster**, and Cancel abandons the whole choice.
     #[test]
-    fn tapping_the_seated_hero_again_unseats_it() {
+    fn tapping_a_hero_toggles_it_in_the_muster() {
         let game = CardTableGame::default();
         let mut board = game.opening();
         let locations = top_deck(&board, "Locations").unwrap();
@@ -755,24 +792,33 @@ mod tests {
                 to: solo,
             }],
         );
-        // Tap to seat, then tap the seated hero to un-seat.
-        let seat = game.tap_intention(&board, raider).expect("tap seats");
-        game.apply(&mut board, &[seat]);
+
+        game.apply(&mut board, &[Intention::Fight { place: solo }]);
         assert_eq!(
-            seated_hero(&board, solo),
-            Some(raider),
-            "the Raider is seated"
+            mustered(&board, solo),
+            vec![raider],
+            "Fight pre-chooses the lone hero"
         );
 
-        let unseat = game
-            .tap_intention(&board, raider)
-            .expect("tapping the seated hero again un-seats it");
-        game.apply(&mut board, &[unseat]);
-        assert_eq!(seated_hero(&board, solo), None, "the seat is empty");
-        assert!(
-            card_in(&board, solo, "Raider").is_some(),
-            "the Raider is back standing on the cell"
+        // Tap it out: nobody chosen, Confirm disabled (too few).
+        let toggle = game.tap_intention(&board, raider).expect("tap toggles");
+        game.apply(&mut board, &[toggle]);
+        assert!(mustered(&board, solo).is_empty(), "the hero is toggled out");
+        assert_eq!(
+            game.disabled_affordances(&board, solo),
+            vec![0],
+            "Confirm disabled: too few"
         );
+
+        // Tap it back in.
+        let toggle = game.tap_intention(&board, raider).expect("tap toggles");
+        game.apply(&mut board, &[toggle]);
+        assert_eq!(mustered(&board, solo), vec![raider], "toggled back in");
+
+        // Cancel abandons the muster and clears the choice.
+        game.apply(&mut board, &[Intention::MusterCancel { place: solo }]);
+        assert!(!is_mustering(&board, solo), "cancel ends the muster");
+        assert!(mustered(&board, solo).is_empty(), "and clears the choice");
     }
 
     #[test]

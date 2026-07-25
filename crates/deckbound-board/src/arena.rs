@@ -686,20 +686,21 @@ pub fn open_fight(board: &mut Board, place: PileId) -> Option<PileId> {
         let _ = board.set_card_type(meta, "arena-meta");
     }
 
-    // Who fights: a SOLO encounter is fought by the one hero SEATED on it; a PARTY encounter fields every
-    // hero standing at the cell. Each fielded hero seats straight into its weapon rank - ranged-only at the
-    // back, everything else at the front. Nothing to declare; the fight opens on the first decision.
-    let heroes: Vec<CardId> = if crate::board_game::is_solo_cell(board, place) {
-        crate::board_game::seated_hero(board, place)
-            .into_iter()
-            .collect()
-    } else {
-        board
-            .content_cards(place)
-            .into_iter()
-            .filter(|&c| board.card(c).map(|k| k.card_type()) == Some("hero"))
-            .collect()
-    };
+    // Who fights: the heroes CHOSEN in the muster (the selected ones). As a fallback for a direct open (a
+    // headless launch or a test that did not muster), every hero present fields. Each fielded hero seats
+    // straight into its weapon rank - ranged-only at the back, everything else at the front. Nothing to
+    // declare; the fight opens on the first decision.
+    let present: Vec<CardId> = board
+        .content_cards(place)
+        .into_iter()
+        .filter(|&c| board.card(c).map(|k| k.card_type()) == Some("hero"))
+        .collect();
+    let chosen: Vec<CardId> = present
+        .iter()
+        .copied()
+        .filter(|&c| board.is_selected(c))
+        .collect();
+    let heroes: Vec<CardId> = if chosen.is_empty() { present } else { chosen };
     for card in heroes {
         let name = board.card(card).map(|c| c.front_title().to_string())?;
         if let Some((stats, melee, ranged, aoe)) = hero_stats(board, &name) {
@@ -723,14 +724,6 @@ pub fn open_fight(board: &mut Board, place: PileId) -> Option<PileId> {
             );
         }
     }
-    // The seated hero (if any) just left its Seat for the arena; drop the now-empty Seat pile so the cell
-    // carries no stray seat while the fight is up. It is remade the next time a hero is seated.
-    if let Some(seat) = crate::board_game::seat_of(board, place)
-        && board.content_cards(seat).is_empty()
-    {
-        let _ = board.remove_pile(seat);
-    }
-
     // Foes: instantiate the encounter roster from the Bestiary straight into their weapon ranks, face up.
     // There is no muster: with no formation to declare, there is nothing to hide and no reveal to stage.
     let label = board.pile(place)?.label.clone();
@@ -1741,14 +1734,21 @@ mod tests {
             let progress = top_deck(board, "Progress").unwrap();
             let _ = board.move_character(position, place, progress);
         }
-        // A solo encounter fields only the SEATED hero, so seat the first one present (a party fields all).
-        if crate::board_game::is_solo_cell(board, place)
-            && let Some(hero) = board
-                .content_cards(place)
-                .into_iter()
-                .find(|&c| board.card(c).map(|k| k.card_type()) == Some("hero"))
-        {
-            crate::board_game::seat_hero(board, hero, place);
+        // Choose who fights, as a muster would: a solo picks one hero, a party takes everyone present.
+        // `open_fight` fields the selected heroes.
+        let present: Vec<CardId> = board
+            .content_cards(place)
+            .into_iter()
+            .filter(|&c| board.card(c).map(|k| k.card_type()) == Some("hero"))
+            .collect();
+        if crate::board_game::is_solo_cell(board, place) {
+            if let Some(&first) = present.first() {
+                let _ = board.select(first);
+            }
+        } else {
+            for hero in present {
+                let _ = board.select(hero);
+            }
         }
         open_fight(board, place).expect("a fight opens")
     }

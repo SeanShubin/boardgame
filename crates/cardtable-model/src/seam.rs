@@ -54,6 +54,15 @@ pub trait BoardGame {
     /// injection + `location_ready_for_combat`-style predicates. Empty = the zone offers no game action.
     fn affordances(&self, board: &Board, focus: PileId) -> Vec<(String, Self::Intention)>;
 
+    /// The indices (into [`affordances`](BoardGame::affordances)) of controls that are **present but
+    /// disabled** — drawn inert and showing *why* they cannot be taken (their label carries the reason, e.g.
+    /// "Pick a hero" or "Too many - pick 1"). Clicking a disabled control does nothing. Most zones disable
+    /// nothing, so the default is empty. Mirrors the modal scene's `disabled_controls` for the felt.
+    fn disabled_affordances(&self, board: &Board, focus: PileId) -> Vec<usize> {
+        let _ = (board, focus);
+        Vec::new()
+    }
+
     /// Interpret a click on the [`Scene`]'s choice at `index` (into [`Scene::choices`](crate::Scene::choices))
     /// — the decision the game is currently asking for. `None` if it means nothing (a barred option). Most
     /// games ask for no such decisions, so the default is `None`.

@@ -41,8 +41,8 @@ mod board_driver;
 pub mod palette;
 use board_driver::{AffordanceClick, DropTrace, TapRequest};
 pub use board_driver::{
-    AffordanceControl, AffordanceLabels, BoardGamePlugin, ChoiceClick, ChoiceControl, DropRequest,
-    SceneState, UndoClick, UndoControl,
+    AffordanceControl, AffordanceLabels, BoardGamePlugin, ChoiceClick, ChoiceControl,
+    DisabledAffordances, DropRequest, SceneState, UndoClick, UndoControl,
 };
 
 mod logging;
@@ -114,6 +114,7 @@ impl Plugin for CardTablePlugin {
             .init_resource::<TapRequest>()
             .init_resource::<AffordanceClick>()
             .init_resource::<AffordanceLabels>()
+            .init_resource::<DisabledAffordances>()
             .init_resource::<SceneState>()
             .init_resource::<DropTrace>()
             .init_resource::<FontSample>()
@@ -143,6 +144,7 @@ impl Plugin for CardTablePlugin {
                         track_card_rects,
                         animate_target_arrows,
                         animate_target_rings,
+                        animate_felt_rings,
                     )
                         .chain(),
                 ),
@@ -759,10 +761,10 @@ fn on_click(
             on.propagate(false);
             return;
         }
-        // A **champion pick**: tapping a hero in the drilled-in solo cell seats it (or un-seats the one
-        // already seated) via the game's `tap_intention` - the combat-style choice, in place of a drag. Route
-        // it like a scene-tile tap and stop, so it does not also grow the card.
-        if is_seat_choice(&table.0, id) {
+        // A **muster toggle**: while a cell is mustering, tapping one of its heroes toggles it in / out of the
+        // chosen party via the game's `tap_intention`. Route it like a scene-tile tap and stop, so it does not
+        // also grow the card.
+        if is_muster_toggle(&table.0, id) {
             tap_request.0 = Some(id);
             rebuild.0 = true;
             on.propagate(false);
@@ -1119,37 +1121,28 @@ fn is_map_position(table: &Board, id: CardId) -> bool {
         return false;
     };
     // A hero **standing** on a place cell (its home is that cell) is a draggable map piece - dragging it
-    // marches to an adjacent cell. (A hero *seated* on a solo encounter is chosen and un-chosen by TAP, not
-    // drag, so it is not a movable piece; see `is_seat_choice` / the game's `seat_tap`.)
+    // marches to an adjacent cell. (Choosing who fights a cell's encounter is a TAP during the muster, not a
+    // drag; see `is_muster_toggle` / the game's `tap_intention`.)
     top_deck(table, "Locations")
         .and_then(|loc| table.pile(loc))
         .is_some_and(|loc| loc.subpiles().contains(&home))
 }
 
-/// Whether tapping `id` **chooses a champion** — a hero in the drilled-in **solo cell**, either standing
-/// (tap to seat it) or already seated (tap to un-seat). This gates which felt taps route to the game's
-/// `tap_intention` instead of the ordinary grow-to-examine, so a hero tapped on the map still examines. A
-/// solo cell is detected generically: the focused pile is a place cell (its parent is the Locations deck)
-/// holding an encounter that accepts a hero (a `pair_key` card). The hero belongs to that cell (standing) or
-/// its Seat sub-pile (seated).
-fn is_seat_choice(table: &Board, id: CardId) -> bool {
+/// Whether tapping `id` **toggles a muster** — a hero standing in the drilled-in cell while that cell is
+/// mustering (choosing its party). This gates which felt taps route to the game's `tap_intention` instead of
+/// the ordinary grow-to-examine, so a hero tapped in a cell that is *not* mustering still examines. Muster
+/// mode is detected generically: the focused pile is a place cell (its parent is the Locations deck) that has
+/// a nested sub-pile (the game's muster marker), and `id` is one of its heroes.
+fn is_muster_toggle(table: &Board, id: CardId) -> bool {
     let focus = table.focus_id();
     let is_place_cell = table.pile(focus).and_then(|p| p.parent()) == top_deck(table, "Locations");
-    let is_solo = table
-        .content_cards(focus)
-        .iter()
-        .any(|&c| table.card(c).and_then(|k| k.pair_key()).is_some());
-    if !is_place_cell || !is_solo {
+    let mustering = table.pile(focus).is_some_and(|p| !p.subpiles().is_empty());
+    if !is_place_cell || !mustering {
         return false;
     }
-    let Some(home) = table
+    table
         .card(id)
-        .filter(|c| c.card_type() == "hero")
-        .map(|c| c.home())
-    else {
-        return false;
-    };
-    home == focus || table.pile(home).and_then(|p| p.parent()) == Some(focus)
+        .is_some_and(|c| c.card_type() == "hero" && c.home() == focus)
 }
 
 /// Whether two place piles are **orthogonally adjacent** on the Locations grid — one step up, down, left,
@@ -1746,6 +1739,7 @@ fn redraw(
     rail: Res<ActionRail>,
     front: Res<FannedFront>,
     affordances: Res<AffordanceLabels>,
+    disabled: Res<DisabledAffordances>,
     scene: Res<SceneState>,
     history: Res<crate::board_driver::BoardHistory>,
     font_sample: Res<FontSample>,
@@ -1769,7 +1763,14 @@ fn redraw(
         draw_scene(&mut commands, scene, &affordances.0, history.can_undo());
         return;
     }
-    build_ui(&mut commands, &table.0, &rail.0, front.0, &affordances.0);
+    build_ui(
+        &mut commands,
+        &table.0,
+        &rail.0,
+        front.0,
+        &affordances.0,
+        &disabled.0,
+    );
 }
 
 /// Build the modal **font sample**: the whole [`palette`] rendered large in the chosen font, in a neat grid,
@@ -3013,6 +3014,34 @@ fn animate_target_rings(
     }
 }
 
+/// Draw the **felt selection rings** — the same marching green dots as the scene's target rings, but around
+/// every **selected** table card (`Board::is_selected`). Selection is how the game marks a live choice on the
+/// felt: a muster selects the heroes it is offering, so they wear the ring, and toggling one selects /
+/// deselects it. Runs only off the felt (no modal scene); re-spawned each frame from [`CardScreenRects`], the
+/// same transient-overlay discipline as the arrows and scene rings, and it never eats a click.
+fn animate_felt_rings(
+    mut commands: Commands,
+    time: Res<Time>,
+    table: Res<Table>,
+    rects: Res<CardScreenRects>,
+    scene: Res<SceneState>,
+    dots: Query<Entity, With<RingDot>>,
+) {
+    // The scene's own ring system owns the dots while a modal is up; stay out of its way then.
+    if scene.0.is_some() {
+        return;
+    }
+    for e in &dots {
+        commands.entity(e).despawn(); // clear last frame's ring
+    }
+    let phase = time.elapsed_secs();
+    for &card in table.0.selection() {
+        if let Some(rect) = rects.0.get(&card) {
+            spawn_ring_dots(&mut commands, *rect, phase);
+        }
+    }
+}
+
 /// Spawn one tile's ring: dots spaced along the tile rect's perimeter (grown a few px clear of the border),
 /// phase-offset by wall-clock so the whole ring marches clockwise.
 fn spawn_ring_dots(commands: &mut Commands, rect: Rect, phase: f32) {
@@ -3265,6 +3294,7 @@ fn build_ui(
     rail: &[RailAction],
     front: Option<CardId>,
     affordances: &[String],
+    disabled: &[usize],
 ) {
     // Defensive: a stale / incompatible save could focus a pile that no longer exists — fall back to the
     // root rather than panic the draw.
@@ -3597,46 +3627,12 @@ fn build_ui(
                     } else if tree.pile(zone).and_then(|p| p.parent())
                         == top_deck(tree, "Locations")
                     {
-                        // Drilled into a place **cell**. Show its cards in a wrapped flex ROW - flexbox spaces
-                        // them by their real size, so nothing overlaps whatever size they render at (the old
-                        // fixed-step row overlapped once a card grew to medium). A **solo** cell is a champion
-                        // CHOICE: its encounter is a `pair_key` target (a card that accepts a hero), and one
-                        // hero may be committed to fight it. Heroes are drawn combat-style - tap one to seat it
-                        // (see `is_seat_choice` / `tap_intention`), the chosen (seated) hero ringed like a
-                        // settled combat tile, the rest ringed as selectable. Non-hero cards (the encounter,
-                        // rumors) grow to examine as usual. Generic primitives only (a `pair_key` card, a
-                        // sub-pile holding a `hero`), not the game's names.
-                        // A solo cell offers a champion choice: its encounter accepts a hero (a `pair_key`
-                        // card). A party cell (a corner) has no such target - everyone present fields - so its
-                        // heroes are not choices and carry no ring.
-                        let is_solo = tree
-                            .content_cards(zone)
-                            .iter()
-                            .any(|&c| tree.card(c).and_then(|k| k.pair_key()).is_some());
-                        let seat_pile = is_solo
-                            .then(|| {
-                                tree.pile(zone)
-                                    .into_iter()
-                                    .flat_map(|p| p.subpiles())
-                                    .find(|&s| {
-                                        tree.content_cards(s).iter().any(|&c| {
-                                            tree.card(c).is_some_and(|k| k.card_type() == "hero")
-                                        })
-                                    })
-                            })
-                            .flatten();
-                        let seated =
-                            seat_pile.and_then(|s| tree.content_cards(s).into_iter().next());
-                        // The cell's cards in reading order, then the seated champion last (it lives in the
-                        // Seat sub-pile, not the cell's content). Each entry carries whether it is the chosen one.
-                        let mut order: Vec<(CardId, bool)> = tree
-                            .content_cards(zone)
-                            .into_iter()
-                            .map(|c| (c, false))
-                            .collect();
-                        if let Some(h) = seated {
-                            order.push((h, true));
-                        }
+                        // Drilled into a place **cell**. Show its cards in a flex ROW - flexbox spaces them by
+                        // their real size, so nothing overlaps whatever size they render at (an absolute row
+                        // overlapped once a card grew to medium). Just the cards: the fight is started from the
+                        // Fight control, which begins a **muster** - the heroes then wear the animated green
+                        // ring (see `animate_felt_rings`, driven by the board's selection) and a tap toggles
+                        // one in or out (see `is_muster_toggle` / the game's `tap_intention`).
                         surface
                             .spawn(Node {
                                 width: Val::Percent(100.0),
@@ -3651,34 +3647,16 @@ fn build_ui(
                                 ..default()
                             })
                             .with_children(|row| {
-                                for (cid, chosen) in order {
+                                for cid in tree.content_cards(zone) {
                                     let card = tree.card(cid).expect("cell card");
-                                    // A hero is a champion choice only in a solo cell; ring it (the ring
-                                    // follows the node's border radius).
-                                    let is_choice = is_solo && card.card_type() == "hero";
-                                    let mut node = Node {
-                                        flex_shrink: 0.0, // keep each card its natural size, never squeezed
-                                        ..default()
-                                    };
-                                    if is_choice {
-                                        node.border_radius = BorderRadius::all(CUE_RADIUS);
-                                    }
-                                    let mut item = row.spawn((node, card_elevation(card)));
-                                    if is_choice {
-                                        // The chosen one settled (thicker green), the rest selectable (thin).
-                                        // Not Movable - a tap seats, it is not dragged.
-                                        let (color, width) = if chosen {
-                                            (TARGET_CUE, 2.0)
-                                        } else {
-                                            (SELECTABLE_CUE, 1.0)
-                                        };
-                                        item.insert(Outline::new(
-                                            Val::Px(width),
-                                            Val::Px(2.0),
-                                            color,
-                                        ));
-                                    }
-                                    item.with_children(|t| spawn_card(t, card));
+                                    row.spawn((
+                                        Node {
+                                            flex_shrink: 0.0, // keep each card its natural size
+                                            ..default()
+                                        },
+                                        card_elevation(card),
+                                    ))
+                                    .with_children(|t| spawn_card(t, card));
                                 }
                             });
                     } else {
@@ -3808,7 +3786,13 @@ fn build_ui(
                 ))
                 .with_children(|slot| {
                     for (i, label) in affordances.iter().enumerate() {
-                        spawn_nav_card(slot, (AffordanceControl(i), Pinned), label);
+                        // A control the game marks disabled is drawn inert (greyed, no click), its label
+                        // saying why - e.g. a muster's Confirm while the party is too few / too many.
+                        if disabled.contains(&i) {
+                            spawn_disabled_nav(slot, label);
+                        } else {
+                            spawn_nav_card(slot, (AffordanceControl(i), Pinned), label);
+                        }
                     }
                 });
             }

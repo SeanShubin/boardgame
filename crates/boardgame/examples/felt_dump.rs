@@ -3,11 +3,12 @@
 //!
 //! The card-table UI is almost entirely math: a card's on-screen rect, which cards are movable, which cards
 //! overlap - all of it is computed and logged. This harness lets that math be read back without a human at
-//! the window. It builds a **champion-chosen solo** position through the public `BoardGame` seam (march two
-//! heroes onto a lone-fight cell, tap-seat one as its champion), drills into that cell, then runs the actual
-//! `BoardGamePlugin` + `LoggingPlugin` for a few frames so the felt settles and the state log is written.
-//! Read the printed `screen.txt` to see the cell laid out as a row (encounter, rumors, the heroes), each
-//! card's rect, and the `overlaps` line - the same data the running app shows.
+//! the window. It builds a **mustering solo** position through the public `BoardGame` seam (march two heroes
+//! onto a lone-fight cell, press Fight to open the muster, tap one hero out so only the Raider is chosen),
+//! drills into that cell, then runs the actual `BoardGamePlugin` + `LoggingPlugin` for a few frames so the
+//! felt settles and the state log is written. It prints the muster state (which heroes are selected/ringed,
+//! and the Confirm control + whether it is disabled) and then `screen.txt` - the cell laid out as a row
+//! (encounter, rumors, the heroes), each card's rect, and the `overlaps` line the running app shows.
 //!
 //! Run: `cargo run -p boardgame --example felt_dump`
 
@@ -53,16 +54,30 @@ fn main() {
         );
     }
 
-    // Seat the Raider as the champion - the tap-to-choose the GUI now issues, applied straight as its
-    // intention (the renderer routes a hero tap in a solo cell to exactly this).
-    let raider = name_in(&board, solo, "Raider").expect("the Raider stands on the cell");
-    game.apply(
-        &mut board,
-        &[Intention::Seat {
-            hero: raider,
-            place: solo,
-        }],
-    );
+    // Press Fight to open the muster: every hero present is pre-chosen (selected -> ringed). A solo wants
+    // one, so two is "too many" and Confirm is disabled. Tap the Marksman out to leave the Raider chosen.
+    game.apply(&mut board, &[Intention::Fight { place: solo }]);
+    let marksman = name_in(&board, solo, "Marksman").expect("the Marksman stands on the cell");
+    if let Some(toggle) = game.tap_intention(&board, marksman) {
+        game.apply(&mut board, &[toggle]);
+    }
+
+    // Report the muster state that the rings and the Confirm control are drawn from (rings are transient
+    // overlay dots, not cards, so they are not in screen.txt - but the selection that drives them is here).
+    let names = |ids: &[cardtable_model::CardId]| -> Vec<String> {
+        ids.iter()
+            .filter_map(|&c| board.card(c).map(|k| k.front_title().to_string()))
+            .collect()
+    };
+    let ringed = board.selection().to_vec();
+    let affordances: Vec<String> = game
+        .affordances(&board, solo)
+        .into_iter()
+        .map(|(label, _)| label)
+        .collect();
+    let disabled = game.disabled_affordances(&board, solo);
+    println!("MUSTER: ringed (selected) heroes = {:?}", names(&ringed));
+    println!("MUSTER: controls = {affordances:?}, disabled indices = {disabled:?}\n");
 
     // ---- 2. Drill into the solo cell so the felt shows that zone. ----
     board.focus(solo).expect("focus the solo cell");
@@ -102,6 +117,6 @@ fn main() {
     };
 
     let _ = std::fs::remove_file("screen.txt");
-    println!("========== SOLO CELL, Raider seated as champion ==========");
+    println!("========== SOLO CELL, mustering (Raider chosen) ==========");
     println!("{}", settle(&mut app));
 }

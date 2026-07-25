@@ -106,6 +106,12 @@ pub struct TapRequest(pub Option<CardId>);
 #[derive(Resource, Default)]
 pub struct AffordanceLabels(pub Vec<String>);
 
+/// The indices (into [`AffordanceLabels`]) of controls the game marks **disabled** — drawn inert, their label
+/// showing why they cannot be taken (e.g. a muster with too few / too many heroes). Filled by
+/// [`sync_affordances`] from [`BoardGame::disabled_affordances`](cardtable_model::BoardGame::disabled_affordances).
+#[derive(Resource, Default)]
+pub struct DisabledAffordances(pub Vec<usize>);
+
 /// The **modal scene** the game wants drawn in place of the felt (a combat arena), or `None` for the ordinary
 /// table. Filled by [`sync_affordances`] from [`BoardGame::scene`](cardtable_model::BoardGame::scene); the
 /// renderer draws it without knowing what it means. Core-owned so `redraw` / the arrow overlay read it
@@ -307,6 +313,7 @@ fn sync_affordances<G>(
     table: Res<Table>,
     game: Res<GameRes<G>>,
     mut labels: ResMut<AffordanceLabels>,
+    mut disabled: ResMut<DisabledAffordances>,
     mut affordances: ResMut<Affordances<G>>,
     mut scene: ResMut<SceneState>,
 ) where
@@ -320,6 +327,7 @@ fn sync_affordances<G>(
         .into_iter()
         .map(|(_, intention)| intention)
         .collect();
+    disabled.0 = game.0.disabled_affordances(&table.0, focus);
     scene.0 = game.0.scene(&table.0, focus);
 }
 
