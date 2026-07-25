@@ -3606,15 +3606,25 @@ fn build_ui(
                         // settled combat tile, the rest ringed as selectable. Non-hero cards (the encounter,
                         // rumors) grow to examine as usual. Generic primitives only (a `pair_key` card, a
                         // sub-pile holding a `hero`), not the game's names.
-                        let seat_pile = tree
-                            .pile(zone)
-                            .into_iter()
-                            .flat_map(|p| p.subpiles())
-                            .find(|&s| {
-                                tree.content_cards(s)
-                                    .iter()
-                                    .any(|&c| tree.card(c).is_some_and(|k| k.card_type() == "hero"))
-                            });
+                        // A solo cell offers a champion choice: its encounter accepts a hero (a `pair_key`
+                        // card). A party cell (a corner) has no such target - everyone present fields - so its
+                        // heroes are not choices and carry no ring.
+                        let is_solo = tree
+                            .content_cards(zone)
+                            .iter()
+                            .any(|&c| tree.card(c).and_then(|k| k.pair_key()).is_some());
+                        let seat_pile = is_solo
+                            .then(|| {
+                                tree.pile(zone)
+                                    .into_iter()
+                                    .flat_map(|p| p.subpiles())
+                                    .find(|&s| {
+                                        tree.content_cards(s).iter().any(|&c| {
+                                            tree.card(c).is_some_and(|k| k.card_type() == "hero")
+                                        })
+                                    })
+                            })
+                            .flatten();
                         let seated =
                             seat_pile.and_then(|s| tree.content_cards(s).into_iter().next());
                         // The cell's cards in reading order, then the seated champion last (it lives in the
@@ -3643,17 +3653,18 @@ fn build_ui(
                             .with_children(|row| {
                                 for (cid, chosen) in order {
                                     let card = tree.card(cid).expect("cell card");
-                                    let is_hero = card.card_type() == "hero";
-                                    // A champion choice is ringed (the ring follows the node's border radius).
+                                    // A hero is a champion choice only in a solo cell; ring it (the ring
+                                    // follows the node's border radius).
+                                    let is_choice = is_solo && card.card_type() == "hero";
                                     let mut node = Node {
                                         flex_shrink: 0.0, // keep each card its natural size, never squeezed
                                         ..default()
                                     };
-                                    if is_hero {
+                                    if is_choice {
                                         node.border_radius = BorderRadius::all(CUE_RADIUS);
                                     }
                                     let mut item = row.spawn((node, card_elevation(card)));
-                                    if is_hero {
+                                    if is_choice {
                                         // The chosen one settled (thicker green), the rest selectable (thin).
                                         // Not Movable - a tap seats, it is not dragged.
                                         let (color, width) = if chosen {
