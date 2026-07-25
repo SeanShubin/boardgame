@@ -347,9 +347,11 @@ pub struct NeedsRebuild(pub bool);
 struct DecksNeedTidy(bool);
 
 /// The felt element ([`Movable`]) currently being dragged (if any), so its tile isn't snapped back by the
-/// animation while the pointer holds it. Either a card or a pile — the drag path is shared.
+/// animation while the pointer holds it. Either a card or a pile — the drag path is shared. Public so a
+/// headless harness can stage a held card and read back the drop cues it activates (see the `felt_dump`
+/// example); the running app sets it from the pointer.
 #[derive(Resource, Default)]
-struct Dragging(Option<TableNode>);
+pub struct Dragging(pub Option<TableNode>);
 
 /// The card currently pulled to the **front of a fan** (a [`Fan`](Arrangement::Fan) row's tapped card),
 /// if any. A fanned row overlaps its cards so only each left edge shows; the front card is drawn fully, on

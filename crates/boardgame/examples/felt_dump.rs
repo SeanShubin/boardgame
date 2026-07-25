@@ -12,8 +12,8 @@
 //! Run: `cargo run -p boardgame --example felt_dump`
 
 use bevy::prelude::*;
-use cardtable::{BoardGamePlugin, LoggingPlugin, Table};
-use cardtable_model::{BoardGame, DropTarget};
+use cardtable::{BoardGamePlugin, Dragging, LoggingPlugin, Table};
+use cardtable_model::{BoardGame, DropTarget, Node};
 use deckbound_board::{CardTableGame, Intention};
 
 fn main() {
@@ -67,6 +67,10 @@ fn main() {
         .expect("a hero dropped on a solo encounter seats");
     game.apply(&mut board, &[seat]);
 
+    // The standing Marksman - dragged onto the encounter below, to read back the drop cue it activates.
+    let marksman =
+        name_in(&board, solo, "Marksman").expect("the Marksman still stands on the cell");
+
     // ---- 2. Drill into the solo cell so the felt shows that zone. ----
     board.focus(solo).expect("focus the solo cell");
 
@@ -95,13 +99,24 @@ fn main() {
     // Override the plugin's opening table with our seated-solo, drilled-in board.
     app.insert_resource(Table(board));
 
-    // Enough frames for the fonts to load, the felt to build, and a settled frame to be written.
-    for _ in 0..80 {
-        app.update();
-    }
+    // Settle the felt (fonts load, UI builds, a settled frame is written), then read screen.txt back.
+    let settle = |app: &mut App| {
+        for _ in 0..80 {
+            app.update();
+        }
+        std::fs::read_to_string("screen.txt")
+            .unwrap_or_else(|e| format!("no screen.txt written ({e}) - the felt never settled"))
+    };
 
-    match std::fs::read_to_string("screen.txt") {
-        Ok(s) => println!("{s}"),
-        Err(e) => eprintln!("no screen.txt written ({e}) - the felt never settled"),
-    }
+    let _ = std::fs::remove_file("screen.txt");
+    println!("========== SETTLED (nothing held) ==========");
+    println!("{}", settle(&mut app));
+
+    // Now stage the Marksman as the held card and settle again: the DROP CUES block should light up the
+    // encounter as a drop target (a hero may seat on it), proving drop-target activation is logged, not just
+    // visible. The same predicate the green glow uses (`can_drop_on_card`), read back as data.
+    app.insert_resource(Dragging(Some(Node::Card(marksman))));
+    let _ = std::fs::remove_file("screen.txt");
+    println!("\n========== HOLDING the Marksman ==========");
+    println!("{}", settle(&mut app));
 }
