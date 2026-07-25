@@ -69,15 +69,19 @@ fn main() {
             .filter_map(|&c| board.card(c).map(|k| k.front_title().to_string()))
             .collect()
     };
-    let ringed = board.selection().to_vec();
+    let selected = board.selection().to_vec();
     let affordances: Vec<String> = game
         .affordances(&board, solo)
         .into_iter()
         .map(|(label, _)| label)
         .collect();
     let disabled = game.disabled_affordances(&board, solo);
-    println!("MUSTER: ringed (selected) heroes = {:?}", names(&ringed));
-    println!("MUSTER: controls = {affordances:?}, disabled indices = {disabled:?}\n");
+    // Selected heroes wear a static border; while the party is illegal (Confirm disabled), the unpicked
+    // heroes wear the animated "pick me" ring - transient dots, so not in screen.txt, but the state is here.
+    println!("MUSTER: selected (static border) = {:?}", names(&selected));
+    println!(
+        "MUSTER: controls = {affordances:?}, disabled = {disabled:?} (non-empty => unpicked heroes animate)\n"
+    );
 
     // ---- 2. Drill into the solo cell so the felt shows that zone. ----
     board.focus(solo).expect("focus the solo cell");

@@ -263,6 +263,13 @@ struct RingDot;
 #[derive(Component)]
 struct PendingPulse;
 
+/// A **felt card that still needs to be chosen** - a muster candidate while the party is not yet legal. It
+/// wears the same rotating "pick me" ring as a targeted tile, drawn by [`animate_felt_rings`] off the node's
+/// own rect. The ring means *incomplete*: once enough are picked, the mark is gone and only the settled
+/// (selected) cards keep their static border.
+#[derive(Component)]
+struct ChoicePulse;
+
 /// **The single authority for where a card is on screen** — each on-screen card's rect in *logical* pixels
 /// (viewport origin, top-left), rebuilt every frame by [`track_card_rects`]. Any feature that needs a card's
 /// position (the targeting arrows, and future point-at-a-card work) reads this instead of re-deriving the
@@ -3014,18 +3021,18 @@ fn animate_target_rings(
     }
 }
 
-/// Draw the **felt selection rings** — the same marching green dots as the scene's target rings, but around
-/// every **selected** table card (`Board::is_selected`). Selection is how the game marks a live choice on the
-/// felt: a muster selects the heroes it is offering, so they wear the ring, and toggling one selects /
-/// deselects it. Runs only off the felt (no modal scene); re-spawned each frame from [`CardScreenRects`], the
-/// same transient-overlay discipline as the arrows and scene rings, and it never eats a click.
+/// Draw the **felt "needs choosing" rings** — the same marching green dots as the scene's target rings, but
+/// around every [`ChoicePulse`] card: a muster candidate that still needs to be picked while the party is not
+/// yet legal. The ring is the *call to act*; once enough are chosen the marks are gone and only the selected
+/// cards keep their static border (`build_ui`). Runs only off the felt (no modal scene); re-spawned each frame
+/// off each marked node's own rect, the same transient-overlay discipline as the arrows and scene rings, and
+/// it never eats a click.
 fn animate_felt_rings(
     mut commands: Commands,
     time: Res<Time>,
-    table: Res<Table>,
-    rects: Res<CardScreenRects>,
     scene: Res<SceneState>,
     dots: Query<Entity, With<RingDot>>,
+    pulse: Query<(&ComputedNode, &UiGlobalTransform), With<ChoicePulse>>,
 ) {
     // The scene's own ring system owns the dots while a modal is up; stay out of its way then.
     if scene.0.is_some() {
@@ -3035,10 +3042,8 @@ fn animate_felt_rings(
         commands.entity(e).despawn(); // clear last frame's ring
     }
     let phase = time.elapsed_secs();
-    for &card in table.0.selection() {
-        if let Some(rect) = rects.0.get(&card) {
-            spawn_ring_dots(&mut commands, *rect, phase);
-        }
+    for (cn, gt) in &pulse {
+        spawn_ring_dots(&mut commands, node_rect(cn, gt), phase);
     }
 }
 
@@ -3629,12 +3634,15 @@ fn build_ui(
                     {
                         // Drilled into a place **cell**. Show its cards in a flex ROW - flexbox spaces them by
                         // their real size, so nothing overlaps whatever size they render at (an absolute row
-                        // overlapped once a card grew to medium). While the cell is **mustering** (its Fight
-                        // control opened a choose-heroes step, marked by a nested pile), every hero is a
-                        // *candidate*: a static selectable border says "choosable", and a tap picks it - a
-                        // picked (selected) hero drops the border for the animated green ring instead (see
-                        // `animate_felt_rings`, driven by the board's selection). Off a muster, plain cards.
+                        // overlapped once a card grew to medium). While the cell is **mustering** (its Choose
+                        // Heroes control opened a choose-heroes step, marked by a nested pile), two cues split
+                        // by MOTION: a **selected** hero wears a static solid border (this is your party), and
+                        // - while the party is not yet legal (Confirm disabled) - each **unpicked** hero wears
+                        // the animated "pick me" ring (`ChoicePulse` -> `animate_felt_rings`). Once the party is
+                        // legal the animation stops and only the static borders remain. Off a muster, plain.
                         let mustering = tree.pile(zone).is_some_and(|p| !p.subpiles().is_empty());
+                        // The muster's Confirm (control 0) is disabled exactly while the party is not yet legal.
+                        let incomplete = mustering && !disabled.is_empty();
                         surface
                             .spawn(Node {
                                 width: Val::Percent(100.0),
@@ -3651,25 +3659,26 @@ fn build_ui(
                             .with_children(|row| {
                                 for cid in tree.content_cards(zone) {
                                     let card = tree.card(cid).expect("cell card");
-                                    // A choosable-but-not-yet-picked hero wears a static selectable border;
-                                    // a picked one is left to the animated ring (from its selection) instead.
-                                    let candidate = mustering
-                                        && card.card_type() == "hero"
-                                        && !tree.is_selected(cid);
+                                    let is_hero = card.card_type() == "hero";
+                                    let selected = tree.is_selected(cid);
                                     let mut node = Node {
                                         flex_shrink: 0.0, // keep each card its natural size
                                         ..default()
                                     };
-                                    if candidate {
+                                    if mustering && is_hero {
                                         node.border_radius = BorderRadius::all(CUE_RADIUS);
                                     }
                                     let mut item = row.spawn((node, card_elevation(card)));
-                                    if candidate {
+                                    if mustering && is_hero && selected {
+                                        // Settled into the party: a static solid border, no motion.
                                         item.insert(Outline::new(
+                                            Val::Px(3.0),
                                             Val::Px(2.0),
-                                            Val::Px(2.0),
-                                            SELECTABLE_CUE,
+                                            TARGET_CUE,
                                         ));
+                                    } else if incomplete && is_hero && !selected {
+                                        // Still needs choosing: the animated "pick me" ring.
+                                        item.insert(ChoicePulse);
                                     }
                                     item.with_children(|t| spawn_card(t, card));
                                 }
