@@ -597,6 +597,12 @@ pub fn sample_table() -> Board {
         )
         .expect("the banks provision the whole starting party");
     }
+    // Dealing the party out empties the Heroes reserve; **remove it**. It was only ever the bank the party's
+    // cards came from and would return to on un-equip - but the party starts assembled and there is no
+    // recruit / re-equip flow, so it is a dead, empty deck. (Its cards are already on the table: each hero's
+    // character deck, map position, and move marker.)
+    let _ = tree.remove_pile(heroes);
+
     // The party starts already **assigned** to Ashfen's encounter (the capstone has room for all): everyone
     // present defaults into the encounter area, ready to fight, and can be dragged out onto the bench.
     crate::board_game::auto_fill(&mut tree, ashfen);
@@ -612,25 +618,27 @@ mod tests {
     fn sample_table_is_well_formed() {
         let t = sample_table();
         let root = t.pile(t.root_id()).unwrap();
-        // The nine decks — Heroes, the banks (Abilities, Stats, Numbers), Locations, Rules, the day clock
+        // The eight decks — the banks (Abilities, Stats, Numbers), Locations, Rules, the day clock
         // (Progress, Events), the Bestiary — plus the four character decks the starting party is assembled
-        // into (one per kit). There is no Kit deck: a hero *is* its kit.
-        assert_eq!(root.subpiles().len(), 9 + catalog::ROSTER.len());
-        // The grand total is the **provisioned** total: assembling the party only *moves* cards out of the
-        // Heroes reserve and the banks into the character decks (PC.2, no mint), so it doesn't change.
-        //   Heroes    4 kits x4 copies + a Zone label   (all 16 copies get dealt into the party)
+        // into (one per kit). The Heroes reserve is gone: the party is dealt out of it during assembly and
+        // the emptied deck removed (there is no recruit / re-equip flow). No Kit deck: a hero *is* its kit.
+        assert_eq!(root.subpiles().len(), 8 + catalog::ROSTER.len());
+        // The grand total is the provisioned total: assembling the party only *moves* cards into the
+        // character decks (PC.2, no mint). The party's 16 hero copies came out of the Heroes reserve, which
+        // is then removed - so of its "4 kits x4 copies + a label", only the 16 copies remain (on the table,
+        // in the character decks / at Ashfen / on Progress); the reserve's own Zone label is gone.
+        //   Heroes    4 kits x4 copies (dealt into the party; the reserve label was removed)
         //   Abilities 4 abilities x5 copies + a label
         //   Stats     5 names x5 copies + a label
         //   Numbers   9 digits x12 copies + a label
-        //   Locations a Zone card + 9 place names + 9 encounter headers + 9 Rumors (app-only readouts).
-        //             The party's 4 map positions come out of Heroes, so they're already counted there.
+        //   Locations a Zone card + 9 place names + 9 encounter headers + 9 Rumors (app-only readouts)
         //   Rules     8 leaf phases + a label, and the Interaction sub-deck's 4 + a label
-        //   Progress  a Zone label (Day 0; the 4 move markers also come out of Heroes)
+        //   Progress  a Zone label (Day 0; the 4 move markers came out of Heroes)
         //   Events    the Day Passed x12 reserve + a label
         //   Bestiary  6 creature `foe` stacks x4 + a label
         assert_eq!(
             t.card_count(),
-            (4 * 4 + 1)
+            (4 * 4)
                 + (4 * 5 + 1)
                 + (5 * 5 + 1)
                 + (9 * 12 + 1)
@@ -699,9 +707,7 @@ mod tests {
         // software-only cards (the 9 app-only Rumors readouts, one per encounter), so adding up the deck
         // chips on the table screen gives the real number of physical cards.
         assert_eq!(t.physical_card_count(t.root_id()), t.card_count() - 9);
-        // Inclusive of each deck's own title card, and stacks count by quantity. The party was dealt out of
-        // Heroes, emptying it — all that is left is the "Heroes" label.
-        assert_eq!(t.physical_card_count(deck(&t, "Heroes")), 1);
+        // Inclusive of each deck's own title card, and stacks count by quantity.
         // Events is a `Day Passed ×12` stack + the "Events" label.
         assert_eq!(t.physical_card_count(deck(&t, "Events")), 12 + 1);
         // Numbers was provisioned 9 digits ×12, less the 5 each hero spent on its stat values.
@@ -1012,10 +1018,7 @@ mod tests {
         assert_eq!(recovered.ability, ability);
         // A deck that is not a character build yields nothing.
         assert_eq!(
-            t.character_recipe(
-                deck(&t, "Heroes"),
-                &deckbound_content::catalog::stat_names()
-            ),
+            t.character_recipe(deck(&t, "Stats"), &deckbound_content::catalog::stat_names()),
             None
         );
     }
@@ -1040,16 +1043,13 @@ mod tests {
         assert_eq!(catalog::ability_reach("(unknown)"), (true, false)); // default melee
     }
 
-    /// Assembling the party dealt each hero's **four** copies out of its `×4` Heroes stack — two to the
-    /// character deck (Zone label + rank marker), one to the home cell (map position), one onto Progress
-    /// (move marker) — emptying the reserve. Un-equipping returns all four, re-forming the `×4`. All
-    /// conservation-clean (PC.2): the total card count is unchanged across the round-trip.
+    /// Assembling the party gives each hero its **four** copies — two to the character deck (Zone label +
+    /// rank marker), one to the home cell (map position), one onto Progress (move marker).
     #[test]
-    fn the_party_was_dealt_four_copies_each_and_un_equipping_returns_them() {
-        let mut t = sample_table();
-        let (heroes, progress) = (deck(&t, "Heroes"), deck(&t, "Progress"));
+    fn the_party_is_assembled_with_four_copies_each() {
+        let t = sample_table();
+        let progress = deck(&t, "Progress");
         let ashfen = t.pile(deck(&t, "Locations")).unwrap().subpiles()[4];
-        let total = t.card_count();
         let (cdeck, name) = party_member(&t, 0);
 
         let copies_in = |t: &Board, pile: PileId| -> usize {
@@ -1062,8 +1062,8 @@ mod tests {
                 .count()
         };
 
-        // Four copies dealt: the Zone label (its own reflection), a rank marker in the deck's content, a
-        // position copy at the home cell, a move marker on Progress. The Heroes reserve is emptied.
+        // The Zone label (its own reflection), a rank marker in the deck's content, a position copy at the
+        // home cell, and a move marker on Progress.
         assert_eq!(
             t.zone_card(cdeck)
                 .and_then(|c| t.card(c))
@@ -1081,26 +1081,6 @@ mod tests {
             "the position copy at the home cell"
         );
         assert_eq!(copies_in(&t, progress), 1, "the move marker on Progress");
-        assert_eq!(copies_in(&t, heroes), 0, "the Heroes stack was emptied");
-
-        // Un-equip: the four copies return, re-forming the ×4 Heroes stack.
-        let (stats, numbers, abilities) = (
-            deck(&t, "Stats"),
-            deck(&t, "Numbers"),
-            deck(&t, "Abilities"),
-        );
-        t.unequip_character(cdeck, heroes, stats, numbers, abilities)
-            .unwrap();
-        let restacked = t
-            .content_cards(heroes)
-            .iter()
-            .find(|&&c| {
-                let k = t.card(c).unwrap();
-                k.card_type() == "hero" && k.front_title() == name
-            })
-            .map(|&c| t.card(c).unwrap().quantity());
-        assert_eq!(restacked, Some(4), "four copies merged back to x4");
-        assert_eq!(t.card_count(), total, "conservation across the round-trip");
     }
 
     /// The movement loop (PC.5): the party is stationed at the home cell with a **move marker** each on
@@ -1397,16 +1377,13 @@ mod tests {
             "the whole party defaults into the capstone encounter (assigned)"
         );
 
-        // Dealing the party out emptied the Heroes reserve (four copies each, all spent).
-        assert!(
-            t.content_cards(find("Heroes").unwrap()).is_empty(),
-            "every hero copy was dealt into the party"
-        );
+        // The Heroes reserve is gone: the party was dealt out of it and the emptied deck removed.
+        assert!(find("Heroes").is_none(), "no leftover Heroes reserve deck");
     }
 
     /// The party is assembled into **real** character decks from the banks (a stat-name card then a number
     /// card per stat, then the ability, under the hero's own card as the deck's Zone label) — no reflection,
-    /// no mint (PC.2). Un-equipping removes the deck and returns every card, conserving the total.
+    /// no mint (PC.2).
     #[test]
     fn equip_assembles_a_character_deck_from_the_banks() {
         let mut t = sample_table();
@@ -1440,21 +1417,6 @@ mod tests {
             ]
         );
         assert_eq!(t.card(t.zone_card(cdeck).unwrap()).unwrap().name(), name);
-
-        // Un-equip: the deck is gone and every card is back, total conserved.
-        let (heroes, stats, numbers, abilities) = (
-            deck(&t, "Heroes"),
-            deck(&t, "Stats"),
-            deck(&t, "Numbers"),
-            deck(&t, "Abilities"),
-        );
-        t.unequip_character(cdeck, heroes, stats, numbers, abilities)
-            .unwrap();
-        assert!(t.pile(cdeck).is_none(), "character deck removed");
-        assert_eq!(
-            t.card_count(),
-            total,
-            "conservation across equip + un-equip"
-        );
+        let _ = total;
     }
 }

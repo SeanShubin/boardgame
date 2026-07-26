@@ -63,9 +63,6 @@ pub struct CardTableGame(pub Arc<Mutex<DoomOracle>>);
 /// identity onto a kit card inside the Inn's projection.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Intention {
-    /// Disband the character deck whose Zone label is `label` — return every borrowed card to its bank and
-    /// the hero's four copies to the Heroes reserve.
-    Unequip { label: CardId },
     /// March the hero map-position `position` to the adjacent place `to`.
     March { position: CardId, to: PileId },
     /// **Enlist** `hero` into `place`'s encounter assignment area (send it to fight), if there is room. See
@@ -104,7 +101,6 @@ impl BoardGame for CardTableGame {
     fn apply(&self, board: &mut Board, intentions: &[Intention]) {
         for intention in intentions {
             match *intention {
-                Intention::Unequip { label } => unequip(board, label),
                 Intention::March { position, to } => march(board, position, to),
                 Intention::Enlist { hero, place } => enlist(board, hero, place),
                 Intention::Dismiss { hero, place } => dismiss(board, hero, place),
@@ -162,10 +158,6 @@ impl BoardGame for CardTableGame {
                         unit: dragged,
                         to: dest,
                     });
-                }
-                // A character deck's label dropped back on the Heroes deck un-equips.
-                if top_deck(board, "Heroes") == Some(dest) && is_character_label(board, dragged) {
-                    return Some(Intention::Unequip { label: dragged });
                 }
                 let hero_home = board
                     .card(dragged)
@@ -354,31 +346,6 @@ fn body_tile_mut(scene: &mut Scene, card: CardId) -> Option<&mut cardtable_model
 
 // ---- intention application — conservation-clean ops over the board ---------------------------------
 
-fn unequip(board: &mut Board, label: CardId) {
-    if !is_character_label(board, label) {
-        return;
-    }
-    let Some(deck) = board.card(label).map(|c| c.home()) else {
-        return;
-    };
-    // Drop the app-only kit manifest (a Virtual readout) first, so the reconcile doesn't mistake it for a
-    // borrowed bank card and shove it into the Heroes stack (its default for an unrecognized card type).
-    for c in board.content_cards(deck) {
-        if board.card(c).map(|k| k.kind()) == Some(CardKind::Virtual) {
-            let _ = board.remove_card(c);
-        }
-    }
-    let (Some(heroes), Some(stats), Some(numbers), Some(abilities)) = (
-        top_deck(board, "Heroes"),
-        top_deck(board, "Stats"),
-        top_deck(board, "Numbers"),
-        top_deck(board, "Abilities"),
-    ) else {
-        return;
-    };
-    let _ = board.unequip_character(deck, heroes, stats, numbers, abilities);
-}
-
 fn march(board: &mut Board, position: CardId, to: PileId) {
     // Locations are UNCAPPED: any number of heroes may stand on, pass through, or gather at a cell.
     if let Some(progress) = top_deck(board, "Progress") {
@@ -464,14 +431,6 @@ fn advance_day(board: &mut Board) {
 }
 
 // ---- legality — ported from the renderer's predicates ---------------------------------------------
-
-/// Whether `card` is a character deck's Zone label (its home pile `reflects` it).
-fn is_character_label(board: &Board, card: CardId) -> bool {
-    let Some(deck) = board.card(card).map(|c| c.home()) else {
-        return false;
-    };
-    board.pile(deck).and_then(|p| p.reflects()) == Some(card)
-}
 
 /// A hero map-position card dropped onto an orthogonally-adjacent place, while drilled into the map.
 fn can_march(board: &Board, dragged: CardId, dest: PileId) -> bool {
@@ -614,44 +573,6 @@ mod tests {
         p.subpiles()
             .into_iter()
             .find_map(|s| card_in(board, s, name))
-    }
-
-    /// The party starts assembled, so the only half of the round-trip left is the teardown: **un-equipping**
-    /// disbands a character deck conservation-clean — every borrowed stat / number / ability card returns to
-    /// its bank, and the hero's four copies re-form the `×4` stack in the Heroes reserve.
-    #[test]
-    fn unequip_disbands_a_character_deck_conservation_clean() {
-        let game = CardTableGame::default();
-        let mut board = game.opening();
-        let root = board.root_id();
-        let before = board.physical_card_count(root);
-
-        let deck = top_deck(&board, "Marksman").expect("the Marksman starts in the party");
-        let label = board
-            .pile(deck)
-            .unwrap()
-            .reflects()
-            .expect("the deck is labelled by the hero's own card");
-
-        game.apply(&mut board, &[Intention::Unequip { label }]);
-
-        assert!(
-            top_deck(&board, "Marksman").is_none(),
-            "the character deck was torn down"
-        );
-        let heroes = top_deck(&board, "Heroes").unwrap();
-        assert_eq!(
-            card_in(&board, heroes, "Marksman")
-                .and_then(|c| board.card(c))
-                .map(|c| c.quantity()),
-            Some(4),
-            "the hero's four copies re-formed the x4 stack in the reserve"
-        );
-        assert_eq!(
-            board.physical_card_count(root),
-            before,
-            "unequip is conservation-clean (PC.2)"
-        );
     }
 
     #[test]
