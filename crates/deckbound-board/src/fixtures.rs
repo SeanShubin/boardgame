@@ -372,13 +372,19 @@ pub fn sample_table() -> Board {
             // keystone creature; a corner fields all four with the keystone doubled.
             let header = typed(&mut tree, place_pile, enc.title, "encounter");
             let mut detail = vec![enc.flavor.to_string()];
-            // Say the cell's rule outright: how many heroes fit in the encounter's assignment area. If they
-            // all fit they are sent automatically; otherwise you drag them in one at a time up to this many.
-            detail.push(format!(
-                "Room for {} hero{} - drag heroes into the encounter to send them.",
-                enc.capacity,
-                if enc.capacity == 1 { "" } else { "es" }
-            ));
+            // Say the cell's rule outright: a party fight takes the whole band (no limit); a solo has room for
+            // a set number. If everyone present fits they are sent automatically; otherwise you drag them in
+            // one at a time up to the limit.
+            detail.push(if enc.party {
+                "The whole party fights here - drag heroes into the encounter to send them."
+                    .to_string()
+            } else {
+                format!(
+                    "Room for {} hero{} - drag heroes into the encounter to send them.",
+                    enc.capacity,
+                    if enc.capacity == 1 { "" } else { "es" }
+                )
+            });
             let foes: Vec<String> = catalog::encounter_foes(enc)
                 .iter()
                 .map(|(c, q)| {
@@ -591,6 +597,9 @@ pub fn sample_table() -> Board {
         )
         .expect("the banks provision the whole starting party");
     }
+    // The party starts already **assigned** to Ashfen's encounter (the capstone has room for all): everyone
+    // present defaults into the encounter area, ready to fight, and can be dragged out onto the bench.
+    crate::board_game::auto_fill(&mut tree, ashfen);
 
     tree
 }
@@ -1368,17 +1377,25 @@ mod tests {
             "Ashfen holds its encounter's assignment area, not an Inn"
         );
 
-        // All four heroes stand at Ashfen Crossing — one map-position card each.
-        let stationed: Vec<String> = t
-            .content_cards(locations.subpiles()[4])
+        // All four heroes stand at Ashfen Crossing (one map-position card each) - and, since the capstone has
+        // room for the whole party, they start **assigned** to its encounter (selected), not benched.
+        let ashfen_pile = locations.subpiles()[4];
+        let stationed: Vec<CardId> = t
+            .content_cards(ashfen_pile)
             .into_iter()
             .filter(|&c| t.card(c).unwrap().card_type() == "hero")
-            .map(|c| t.card(c).unwrap().name().to_string())
             .collect();
         assert_eq!(stationed.len(), catalog::ROSTER.len());
         for &(kit, _, _) in &catalog::ROSTER {
-            assert!(stationed.iter().any(|n| n == kit), "{kit} stands at Ashfen");
+            assert!(
+                stationed.iter().any(|&c| t.card(c).unwrap().name() == kit),
+                "{kit} stands at Ashfen"
+            );
         }
+        assert!(
+            stationed.iter().all(|&c| t.is_selected(c)),
+            "the whole party defaults into the capstone encounter (assigned)"
+        );
 
         // Dealing the party out emptied the Heroes reserve (four copies each, all spent).
         assert!(

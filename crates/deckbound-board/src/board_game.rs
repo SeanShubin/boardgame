@@ -167,13 +167,16 @@ impl BoardGame for CardTableGame {
                 if top_deck(board, "Heroes") == Some(dest) && is_character_label(board, dragged) {
                     return Some(Intention::Unequip { label: dragged });
                 }
-                let is_hero = board.card(dragged).map(|c| c.card_type()) == Some("hero");
-                // A bench hero dropped into a cell's **encounter area** enlists it (if there is room). `dest`
-                // is that cell's Assigned pile; the hero must be standing at the same cell.
-                if is_hero
-                    && let Some(place) = board.pile(dest).and_then(|p| p.parent())
+                let hero_home = board
+                    .card(dragged)
+                    .filter(|c| c.card_type() == "hero")
+                    .map(|c| c.home());
+                // A **bench** hero (unassigned, standing at the cell) dropped into that cell's encounter area
+                // enlists it, if there is room. `dest` is the cell's Assigned marker pile.
+                if let Some(place) = board.pile(dest).and_then(|p| p.parent())
                     && assigned_pile(board, place) == Some(dest)
-                    && board.card(dragged).map(|c| c.home()) == Some(place)
+                    && hero_home == Some(place)
+                    && !board.is_selected(dragged)
                     && assigned_heroes(board, place).len() < capacity_of(board, place)
                 {
                     return Some(Intention::Enlist {
@@ -181,12 +184,9 @@ impl BoardGame for CardTableGame {
                         place,
                     });
                 }
-                // An assigned hero dropped back onto its cell (out of the encounter area) is dismissed. The
-                // hero's home is the cell's Assigned pile; `dest` is that cell.
-                if is_hero
-                    && assigned_pile(board, dest)
-                        .is_some_and(|a| board.content_cards(a).contains(&dragged))
-                {
+                // An **assigned** hero dropped back onto its cell (out of the encounter area) is dismissed.
+                // `dest` is the cell it stands on and the hero is currently assigned (selected).
+                if hero_home == Some(dest) && board.is_selected(dragged) {
                     return Some(Intention::Dismiss {
                         hero: dragged,
                         place: dest,
@@ -384,13 +384,17 @@ fn march(board: &mut Board, position: CardId, to: PileId) {
     if let Some(progress) = top_deck(board, "Progress") {
         let _ = board.move_character(position, to, progress);
     }
-    // On arrival, auto-fill the destination's encounter if everyone present now fits (see `auto_fill`), so a
-    // hero marched to a fight it fits into is already assigned when you look at the location.
+    // The marched hero arrives on the destination's **bench** (un-assigned): its assignment is re-decided
+    // here, not carried from wherever it came. Then auto-fill sends everyone in if they all fit, so a hero
+    // marched to a fight it fits into is already assigned when you look at the location.
+    board.deselect(position);
     auto_fill(board, to);
 }
 
-/// The encounter's **assignment area** on `place` - the sub-pile holding the heroes sent to fight it. Created
-/// with the cell (see fixtures), so it is always present on a cell that has an encounter.
+/// The encounter's **assignment area** on `place` - an (empty) marker sub-pile that is the encounter's drop
+/// zone. Assignment itself is tracked by card **selection** (a hero stays standing at the cell whether sent
+/// in or not), so this pile holds nothing; it exists only as the target the renderer glows and a drop lands
+/// on. Created with the cell (see fixtures).
 pub(crate) fn assigned_pile(board: &Board, place: PileId) -> Option<PileId> {
     board
         .pile(place)?
@@ -399,19 +403,21 @@ pub(crate) fn assigned_pile(board: &Board, place: PileId) -> Option<PileId> {
         .find(|&s| board.pile(s).map(|p| p.label.as_str()) == Some("Assigned"))
 }
 
-/// The heroes **assigned** to `place`'s encounter (inside its assignment area).
-pub(crate) fn assigned_heroes(board: &Board, place: PileId) -> Vec<CardId> {
-    assigned_pile(board, place)
-        .map(|a| board.content_cards(a))
-        .unwrap_or_default()
-}
-
-/// The heroes standing at `place` but **not** assigned (on the "bench" - the cell's own content).
-fn bench_heroes(board: &Board, place: PileId) -> Vec<CardId> {
+/// Every hero standing at `place` (its map-position cards - assigned or on the bench alike).
+fn heroes_at(board: &Board, place: PileId) -> Vec<CardId> {
     board
         .content_cards(place)
         .into_iter()
         .filter(|&c| board.card(c).map(|k| k.card_type()) == Some("hero"))
+        .collect()
+}
+
+/// The heroes **assigned** to `place`'s encounter - the ones selected (sent in). They keep standing at the
+/// cell; selection is what marks them for the fight.
+pub(crate) fn assigned_heroes(board: &Board, place: PileId) -> Vec<CardId> {
+    heroes_at(board, place)
+        .into_iter()
+        .filter(|&c| board.is_selected(c))
         .collect()
 }
 
@@ -425,37 +431,27 @@ pub(crate) fn capacity_of(board: &Board, place: PileId) -> usize {
         .unwrap_or(0)
 }
 
-/// **Enlist** `hero` into `place`'s encounter (move it into the assignment area), if there is still room.
+/// **Enlist** `hero` into `place`'s encounter (mark it assigned), if there is still room.
 fn enlist(board: &mut Board, hero: CardId, place: PileId) {
-    let Some(area) = assigned_pile(board, place) else {
-        return;
-    };
-    if assigned_heroes(board, place).len() >= capacity_of(board, place) {
-        return; // full - no room for another
+    if assigned_heroes(board, place).len() < capacity_of(board, place) {
+        let _ = board.select(hero);
     }
-    let at = board.content_cards(area).len();
-    let _ = board.move_card(hero, area, at);
 }
 
-/// **Dismiss** `hero` from `place`'s encounter back to standing at the cell (the bench).
-fn dismiss(board: &mut Board, hero: CardId, place: PileId) {
-    let at = board.pile(place).map_or(0, |p| p.cards().len());
-    let _ = board.move_card(hero, place, at);
+/// **Dismiss** `hero` from `place`'s encounter back to the bench (un-assign it).
+fn dismiss(board: &mut Board, hero: CardId, _place: PileId) {
+    board.deselect(hero);
 }
 
-/// **Auto-fill** `place`'s encounter: if everyone present (bench + already-assigned) fits in its capacity,
-/// send every benched hero in. If they do not all fit, leave the bench alone - the player drags heroes in one
-/// at a time. Idempotent, and only ever *adds* (never dismisses), so it never fights a manual choice.
-fn auto_fill(board: &mut Board, place: PileId) {
+/// **Auto-fill** `place`'s encounter: if everyone present fits in its capacity, send them all in. If they do
+/// not all fit, leave them on the bench - the player drags heroes in one at a time. Only ever *adds* (never
+/// dismisses), so it never fights a manual choice.
+pub(crate) fn auto_fill(board: &mut Board, place: PileId) {
     let capacity = capacity_of(board, place);
-    if capacity == 0 {
-        return; // no encounter here
-    }
-    let bench = bench_heroes(board, place);
-    let total = bench.len() + assigned_heroes(board, place).len();
-    if total <= capacity {
-        for hero in bench {
-            enlist(board, hero, place);
+    let heroes = heroes_at(board, place);
+    if capacity > 0 && heroes.len() <= capacity {
+        for hero in heroes {
+            let _ = board.select(hero);
         }
     }
 }

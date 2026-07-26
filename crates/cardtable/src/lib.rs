@@ -851,6 +851,12 @@ fn on_drop(
     let Ok(dragged) = cards.get(event.event.dropped) else {
         return; // only cards drop *into* piles
     };
+    // The dragged tile cursor-follows and occludes the pick, so a drop often reports landing on ITSELF. That
+    // is never a move - drop it, and let the geometry-based resolvers in `on_node_drag_end` (march / enlist /
+    // dismiss) find the real target.
+    if event.entity == event.event.dropped {
+        return;
+    }
     // Record what the card landed on — another card, or a pile — for the board-game driver to interpret
     // (equip / un-equip / march) or, failing that, perform the default move into the pile. The renderer
     // stays game-agnostic. A drop onto the bare felt is an in-zone reorder, handled by `on_node_drag_end`.
@@ -1106,9 +1112,10 @@ pub(crate) fn can_drop_on_card(table: &Board, dragged: CardId, target: CardId) -
     d_kit != t_kit
 }
 
-/// Whether `id` is a hero's **map position** copy — a `hero` card that lives on the Locations map: either
-/// standing on a place cell (bench) or sitting in a cell's **encounter area** (a place cell's sub-pile). Both
-/// are draggable pieces: a bench hero marches / enlists, an assigned hero dismisses.
+/// Whether `id` is a hero's **map position** copy — a `hero` card standing on one of the Locations grid's
+/// place cells (its home is that cell). Such a hero is a draggable piece: on the map it marches, and drilled
+/// into its cell it enlists into / dismisses from the encounter. (Assignment is tracked by selection, so an
+/// assigned hero still stands on its cell.)
 fn is_map_position(table: &Board, id: CardId) -> bool {
     let Some(home) = table
         .card(id)
@@ -1117,14 +1124,9 @@ fn is_map_position(table: &Board, id: CardId) -> bool {
     else {
         return false;
     };
-    let Some(loc) = top_deck(table, "Locations").and_then(|l| table.pile(l)) else {
-        return false;
-    };
-    loc.subpiles().contains(&home)
-        || table
-            .pile(home)
-            .and_then(|p| p.parent())
-            .is_some_and(|par| loc.subpiles().contains(&par))
+    top_deck(table, "Locations")
+        .and_then(|loc| table.pile(loc))
+        .is_some_and(|loc| loc.subpiles().contains(&home))
 }
 
 /// Whether two place piles are **orthogonally adjacent** on the Locations grid — one step up, down, left,
@@ -1170,19 +1172,21 @@ pub(crate) fn can_drop_on_pile(table: &Board, dragged: CardId, target: PileId) -
         .pile(locations)
         .map(|p| p.subpiles())
         .unwrap_or_default();
-    // MARCH: on the map, a bench hero to an adjacent place.
+    // MARCH: on the map, a hero to an adjacent place.
     if table.focus_id() == locations {
         return places_orthogonally_adjacent(table, home, target);
     }
-    // ENLIST: target is a place cell's encounter area (its sub-pile) and the hero stands on that same cell.
+    // ENLIST: an unassigned (unselected) hero standing at a cell, dropped into that cell's encounter area
+    // (its sub-pile marker).
     if let Some(cell) = table.pile(target).and_then(|p| p.parent())
         && places.contains(&cell)
         && home == cell
+        && !table.is_selected(dragged)
     {
         return true;
     }
-    // DISMISS: target is a place cell and the hero sits in its encounter area (home's parent is the cell).
-    if places.contains(&target) && table.pile(home).and_then(|p| p.parent()) == Some(target) {
+    // DISMISS: an assigned (selected) hero standing at a cell, dropped back onto that cell (the bench).
+    if places.contains(&target) && home == target && table.is_selected(dragged) {
         return true;
     }
     false
@@ -1572,6 +1576,23 @@ fn on_node_drag_end(
         // Map (Locations drilled into): a hero token dropped onto a place marches there. The token
         // cursor-follows and occludes picking, so the destination is the one valid place its **box** overlaps.
         if top_deck(&table.0, "Locations") == Some(table.0.focus_id())
+            && table.0.card(card).is_some_and(|c| c.card_type() == "hero")
+        {
+            let drag_box = geom.get(entity).ok().map(|(_, cn, gt)| node_box(cn, gt));
+            if let Some(dest) =
+                drag_box.and_then(|db| dropped_map_place(&table.0, card, db, &drop_zones))
+            {
+                drop_request.0 = Some((card, DropTarget::Pile(dest)));
+            }
+            rebuild.0 = true;
+            return;
+        }
+        // Drilled into a place **cell**: a hero dropped into the encounter AREA enlists, onto the cell (the
+        // bench) dismisses. The dragged tile occludes picking, so resolve by which drop zone the drag box
+        // overlaps - `can_drop_on_pile` already tells the area (enlist) from the cell (dismiss) apart, so the
+        // overlapped droppable zone is unique. (Same geometry trick as the map above.)
+        if table.0.pile(table.0.focus_id()).and_then(|p| p.parent())
+            == top_deck(&table.0, "Locations")
             && table.0.card(card).is_some_and(|c| c.card_type() == "hero")
         {
             let drag_box = geom.get(entity).ok().map(|(_, cn, gt)| node_box(cn, gt));
@@ -3549,18 +3570,10 @@ fn build_ui(
                             .with_children(|grid| {
                                 for place in tree.pile(zone).expect("map zone").subpiles() {
                                     // The heroes stationed at this place (their `hero` position copies)
-                                    // cascade below its place card. Heroes both standing on the cell (its own
-                                    // content) and already assigned to its encounter (the cell's sub-pile) show
-                                    // here, so a hero never vanishes from the map just because it was sent in.
+                                    // cascade below its place card.
                                     let tokens: Vec<CardId> = tree
                                         .content_cards(place)
                                         .into_iter()
-                                        .chain(
-                                            tree.pile(place)
-                                                .into_iter()
-                                                .flat_map(|p| p.subpiles())
-                                                .flat_map(|s| tree.content_cards(s)),
-                                        )
                                         .filter(|&c| {
                                             tree.card(c).is_some_and(|k| k.card_type() == "hero")
                                         })
@@ -3613,29 +3626,37 @@ fn build_ui(
                         == top_deck(tree, "Locations")
                     {
                         // The **location screen**: a marked ENCOUNTER area (the encounter card + the heroes
-                        // assigned to fight it, with a slot to drop the next) above the BENCH (the heroes
-                        // present but not assigned, plus the rumor). Drag a bench hero into the encounter to
-                        // send it; drag an assigned hero out onto the bench to pull it back. The encounter area
-                        // is the cell's one sub-pile; assigned heroes live in it, the rest are the cell's own
-                        // content. Both are drop zones (glow via `can_drop_on_pile`).
+                        // assigned to fight it, with a slot to drop the next) and the BENCH (the heroes present
+                        // but not assigned, plus the rumor). Drag a bench hero into the encounter to send it;
+                        // drag an assigned hero out onto the bench to pull it back. Assignment is card
+                        // SELECTION - the heroes all stand at the cell (its content); the encounter area is an
+                        // empty marker sub-pile that is just the drop zone. Both are drop zones (glow via
+                        // `can_drop_on_pile`).
                         let area = tree
                             .pile(zone)
                             .and_then(|p| p.subpiles().into_iter().next());
-                        let assigned: Vec<CardId> =
-                            area.map(|a| tree.content_cards(a)).unwrap_or_default();
                         let content = tree.content_cards(zone);
                         let encounter = content
                             .iter()
                             .copied()
                             .find(|&c| tree.card(c).is_some_and(|k| k.card_type() == "encounter"));
+                        let is_hero =
+                            |c: CardId| tree.card(c).is_some_and(|k| k.card_type() == "hero");
+                        // Assigned = selected heroes; bench = everything else (unselected heroes + the rumor),
+                        // minus the encounter (drawn in the area).
+                        let assigned: Vec<CardId> = content
+                            .iter()
+                            .copied()
+                            .filter(|&c| is_hero(c) && tree.is_selected(c))
+                            .collect();
                         let bench: Vec<CardId> = content
                             .iter()
                             .copied()
-                            .filter(|&c| Some(c) != encounter)
+                            .filter(|&c| {
+                                Some(c) != encounter && !(is_hero(c) && tree.is_selected(c))
+                            })
                             .collect();
-                        let bench_heroes = bench
-                            .iter()
-                            .any(|&c| tree.card(c).is_some_and(|k| k.card_type() == "hero"));
+                        let bench_heroes = bench.iter().copied().any(is_hero);
                         // A card wrapper that keeps its natural size in the flex row.
                         let slot = || Node {
                             flex_shrink: 0.0,

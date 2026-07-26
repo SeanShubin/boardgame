@@ -49,14 +49,25 @@ fn main() {
         .subpiles()
         .into_iter()
         .next()
-        .expect("the cell has an encounter area");
-    let assigned: Vec<cardtable_model::CardId> = board.pile(area).unwrap().cards();
-    let bench: Vec<cardtable_model::CardId> = board
+        .expect("the cell has an encounter area (empty drop-zone marker)");
+    let _ = area;
+    // Assignment is card SELECTION: the heroes all stand at the cell; the selected ones are assigned.
+    let heroes: Vec<cardtable_model::CardId> = board
         .pile(home)
         .unwrap()
         .cards()
         .into_iter()
         .filter(|&c| board.card(c).is_some_and(|k| k.card_type() == "hero"))
+        .collect();
+    let assigned: Vec<cardtable_model::CardId> = heroes
+        .iter()
+        .copied()
+        .filter(|&c| board.is_selected(c))
+        .collect();
+    let bench: Vec<cardtable_model::CardId> = heroes
+        .iter()
+        .copied()
+        .filter(|&c| !board.is_selected(c))
         .collect();
     let affordances: Vec<String> = game
         .affordances(&board, home)
@@ -105,6 +116,6 @@ fn main() {
     };
 
     let _ = std::fs::remove_file("screen.txt");
-    println!("========== SOLO CELL: encounter area + bench ==========");
+    println!("========== ASHFEN: encounter area (party assigned) + bench ==========");
     println!("{}", settle(&mut app));
 }

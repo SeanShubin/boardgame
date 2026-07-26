@@ -495,7 +495,7 @@ pub const ENCOUNTERS: [Encounter; 9] = [
         flavor: "Everything at once at the crossroads: a swarm overruns the front, wardens anchor the line, a sniper marks you from the dark - first-strike the swarm, slip a blade to the sniper, break the wall.",
         keystone: "The Sniper",
         party: true,
-        capacity: 4,
+        capacity: 9, // the capstone has no hero limit - the whole party (and more) fights it
         behavior: Some(Behavior::CombinedArms),
         foes: &[("The Swarm", 1), ("The Wall", 2), ("The Sniper", 1)],
     },
