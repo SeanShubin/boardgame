@@ -144,7 +144,6 @@ impl Plugin for CardTablePlugin {
                         track_card_rects,
                         animate_target_arrows,
                         animate_target_rings,
-                        animate_felt_rings,
                     )
                         .chain(),
                 ),
@@ -262,13 +261,6 @@ struct RingDot;
 /// [`animate_target_rings`] off the node's own rect, since a control has no [`CardId`] to track.
 #[derive(Component)]
 struct PendingPulse;
-
-/// A **felt card that still needs to be chosen** - a muster candidate while the party is not yet legal. It
-/// wears the same rotating "pick me" ring as a targeted tile, drawn by [`animate_felt_rings`] off the node's
-/// own rect. The ring means *incomplete*: once enough are picked, the mark is gone and only the settled
-/// (selected) cards keep their static border.
-#[derive(Component)]
-struct ChoicePulse;
 
 /// **The single authority for where a card is on screen** — each on-screen card's rect in *logical* pixels
 /// (viewport origin, top-left), rebuilt every frame by [`track_card_rects`]. Any feature that needs a card's
@@ -768,15 +760,6 @@ fn on_click(
             on.propagate(false);
             return;
         }
-        // A **muster toggle**: while a cell is mustering, tapping one of its heroes toggles it in / out of the
-        // chosen party via the game's `tap_intention`. Route it like a scene-tile tap and stop, so it does not
-        // also grow the card.
-        if is_muster_toggle(&table.0, id) {
-            tap_request.0 = Some(id);
-            rebuild.0 = true;
-            on.propagate(false);
-            return;
-        }
         // In a **fan** (a card in a `Rows` zone, the header aside), a tap pulls that card to the front so
         // you can examine it — its full face rises above its overlapping neighbours. Everywhere else a tap
         // fires the card's utility action, grows/shrinks the card (cycle render size), fires a loose action,
@@ -1117,8 +1100,9 @@ pub(crate) fn can_drop_on_card(table: &Board, dragged: CardId, target: CardId) -
     d_kit != t_kit
 }
 
-/// Whether `id` is a hero's **map position** copy — a `hero` card whose home is one of the Locations
-/// grid's place piles (as opposed to a hero copy in the Heroes deck, a character deck, or Progress).
+/// Whether `id` is a hero's **map position** copy — a `hero` card that lives on the Locations map: either
+/// standing on a place cell (bench) or sitting in a cell's **encounter area** (a place cell's sub-pile). Both
+/// are draggable pieces: a bench hero marches / enlists, an assigned hero dismisses.
 fn is_map_position(table: &Board, id: CardId) -> bool {
     let Some(home) = table
         .card(id)
@@ -1127,29 +1111,14 @@ fn is_map_position(table: &Board, id: CardId) -> bool {
     else {
         return false;
     };
-    // A hero **standing** on a place cell (its home is that cell) is a draggable map piece - dragging it
-    // marches to an adjacent cell. (Choosing who fights a cell's encounter is a TAP during the muster, not a
-    // drag; see `is_muster_toggle` / the game's `tap_intention`.)
-    top_deck(table, "Locations")
-        .and_then(|loc| table.pile(loc))
-        .is_some_and(|loc| loc.subpiles().contains(&home))
-}
-
-/// Whether tapping `id` **toggles a muster** — a hero standing in the drilled-in cell while that cell is
-/// mustering (choosing its party). This gates which felt taps route to the game's `tap_intention` instead of
-/// the ordinary grow-to-examine, so a hero tapped in a cell that is *not* mustering still examines. Muster
-/// mode is detected generically: the focused pile is a place cell (its parent is the Locations deck) that has
-/// a nested sub-pile (the game's muster marker), and `id` is one of its heroes.
-fn is_muster_toggle(table: &Board, id: CardId) -> bool {
-    let focus = table.focus_id();
-    let is_place_cell = table.pile(focus).and_then(|p| p.parent()) == top_deck(table, "Locations");
-    let mustering = table.pile(focus).is_some_and(|p| !p.subpiles().is_empty());
-    if !is_place_cell || !mustering {
+    let Some(loc) = top_deck(table, "Locations").and_then(|l| table.pile(l)) else {
         return false;
-    }
-    table
-        .card(id)
-        .is_some_and(|c| c.card_type() == "hero" && c.home() == focus)
+    };
+    loc.subpiles().contains(&home)
+        || table
+            .pile(home)
+            .and_then(|p| p.parent())
+            .is_some_and(|par| loc.subpiles().contains(&par))
 }
 
 /// Whether two place piles are **orthogonally adjacent** on the Locations grid — one step up, down, left,
@@ -1178,16 +1147,39 @@ fn places_orthogonally_adjacent(table: &Board, a: PileId, b: PileId) -> bool {
     ra.abs_diff(rb) + ca.abs_diff(cb) == 1
 }
 
-/// Whether the held card `dragged` may legally be dropped on the pile `target` — on the location **map**, a
-/// character's position copy moves to an **orthogonally adjacent** place (one step up/down/left/right).
+/// Whether the held hero `dragged` may legally be dropped on the pile `target`:
+/// - on the **map** (Locations focused), a bench hero **marches** to an orthogonally-adjacent place;
+/// - drilled into a **cell**, a bench hero **enlists** into that cell's encounter area (a sub-pile of the
+///   cell), and an **assigned** hero **dismisses** back onto the cell. (Capacity is enforced by the game on
+///   the drop; the glow shows the area regardless.)
 pub(crate) fn can_drop_on_pile(table: &Board, dragged: CardId, target: PileId) -> bool {
-    if top_deck(table, "Locations") != Some(table.focus_id()) {
-        return false;
-    }
     let Some(card) = table.card(dragged).filter(|c| c.card_type() == "hero") else {
         return false;
     };
-    places_orthogonally_adjacent(table, card.home(), target)
+    let home = card.home();
+    let Some(locations) = top_deck(table, "Locations") else {
+        return false;
+    };
+    let places = table
+        .pile(locations)
+        .map(|p| p.subpiles())
+        .unwrap_or_default();
+    // MARCH: on the map, a bench hero to an adjacent place.
+    if table.focus_id() == locations {
+        return places_orthogonally_adjacent(table, home, target);
+    }
+    // ENLIST: target is a place cell's encounter area (its sub-pile) and the hero stands on that same cell.
+    if let Some(cell) = table.pile(target).and_then(|p| p.parent())
+        && places.contains(&cell)
+        && home == cell
+    {
+        return true;
+    }
+    // DISMISS: target is a place cell and the hero sits in its encounter area (home's parent is the cell).
+    if places.contains(&target) && table.pile(home).and_then(|p| p.parent()) == Some(target) {
+        return true;
+    }
+    false
 }
 
 /// Whether dragging this card would trigger a **game action** (not just a visual re-arrange) — so it earns
@@ -3021,32 +3013,6 @@ fn animate_target_rings(
     }
 }
 
-/// Draw the **felt "needs choosing" rings** — the same marching green dots as the scene's target rings, but
-/// around every [`ChoicePulse`] card: a muster candidate that still needs to be picked while the party is not
-/// yet legal. The ring is the *call to act*; once enough are chosen the marks are gone and only the selected
-/// cards keep their static border (`build_ui`). Runs only off the felt (no modal scene); re-spawned each frame
-/// off each marked node's own rect, the same transient-overlay discipline as the arrows and scene rings, and
-/// it never eats a click.
-fn animate_felt_rings(
-    mut commands: Commands,
-    time: Res<Time>,
-    scene: Res<SceneState>,
-    dots: Query<Entity, With<RingDot>>,
-    pulse: Query<(&ComputedNode, &UiGlobalTransform), With<ChoicePulse>>,
-) {
-    // The scene's own ring system owns the dots while a modal is up; stay out of its way then.
-    if scene.0.is_some() {
-        return;
-    }
-    for e in &dots {
-        commands.entity(e).despawn(); // clear last frame's ring
-    }
-    let phase = time.elapsed_secs();
-    for (cn, gt) in &pulse {
-        spawn_ring_dots(&mut commands, node_rect(cn, gt), phase);
-    }
-}
-
 /// Spawn one tile's ring: dots spaced along the tile rect's perimeter (grown a few px clear of the border),
 /// phase-offset by wall-clock so the whole ring marches clockwise.
 fn spawn_ring_dots(commands: &mut Commands, rect: Rect, phase: f32) {
@@ -3577,10 +3543,18 @@ fn build_ui(
                             .with_children(|grid| {
                                 for place in tree.pile(zone).expect("map zone").subpiles() {
                                     // The heroes stationed at this place (their `hero` position copies)
-                                    // cascade below its place card.
+                                    // cascade below its place card. Heroes both standing on the cell (its own
+                                    // content) and already assigned to its encounter (the cell's sub-pile) show
+                                    // here, so a hero never vanishes from the map just because it was sent in.
                                     let tokens: Vec<CardId> = tree
                                         .content_cards(place)
                                         .into_iter()
+                                        .chain(
+                                            tree.pile(place)
+                                                .into_iter()
+                                                .flat_map(|p| p.subpiles())
+                                                .flat_map(|s| tree.content_cards(s)),
+                                        )
                                         .filter(|&c| {
                                             tree.card(c).is_some_and(|k| k.card_type() == "hero")
                                         })
@@ -3632,53 +3606,113 @@ fn build_ui(
                     } else if tree.pile(zone).and_then(|p| p.parent())
                         == top_deck(tree, "Locations")
                     {
-                        // Drilled into a place **cell**. Show its cards in a flex ROW - flexbox spaces them by
-                        // their real size, so nothing overlaps whatever size they render at (an absolute row
-                        // overlapped once a card grew to medium). While the cell is **mustering** (its Choose
-                        // Heroes control opened a choose-heroes step, marked by a nested pile), two cues split
-                        // by MOTION: a **selected** hero wears a static solid border (this is your party), and
-                        // - while the party is not yet legal (Confirm disabled) - each **unpicked** hero wears
-                        // the animated "pick me" ring (`ChoicePulse` -> `animate_felt_rings`). Once the party is
-                        // legal the animation stops and only the static borders remain. Off a muster, plain.
-                        let mustering = tree.pile(zone).is_some_and(|p| !p.subpiles().is_empty());
-                        // The muster's Confirm (control 0) is disabled exactly while the party is not yet legal.
-                        let incomplete = mustering && !disabled.is_empty();
+                        // The **location screen**: a marked ENCOUNTER area (the encounter card + the heroes
+                        // assigned to fight it, with a slot to drop the next) above the BENCH (the heroes
+                        // present but not assigned, plus the rumor). Drag a bench hero into the encounter to
+                        // send it; drag an assigned hero out onto the bench to pull it back. The encounter area
+                        // is the cell's one sub-pile; assigned heroes live in it, the rest are the cell's own
+                        // content. Both are drop zones (glow via `can_drop_on_pile`).
+                        let area = tree
+                            .pile(zone)
+                            .and_then(|p| p.subpiles().into_iter().next());
+                        let assigned: Vec<CardId> =
+                            area.map(|a| tree.content_cards(a)).unwrap_or_default();
+                        let content = tree.content_cards(zone);
+                        let encounter = content
+                            .iter()
+                            .copied()
+                            .find(|&c| tree.card(c).is_some_and(|k| k.card_type() == "encounter"));
+                        let bench: Vec<CardId> = content
+                            .iter()
+                            .copied()
+                            .filter(|&c| Some(c) != encounter)
+                            .collect();
+                        let bench_heroes = bench
+                            .iter()
+                            .any(|&c| tree.card(c).is_some_and(|k| k.card_type() == "hero"));
+                        // A card wrapper that keeps its natural size in the flex row.
+                        let slot = || Node {
+                            flex_shrink: 0.0,
+                            ..default()
+                        };
+                        // The whole location screen is ONE row (dropping a hero on it, off the encounter,
+                        // dismisses it): the marked ENCOUNTER area on the left, then the BENCH heroes + rumor.
                         surface
-                            .spawn(Node {
-                                width: Val::Percent(100.0),
-                                flex_direction: FlexDirection::Row,
-                                align_items: AlignItems::FlexStart,
-                                justify_content: JustifyContent::Center,
-                                column_gap: Val::Px(MAP_CELL_GAP),
-                                margin: UiRect {
-                                    top: Val::Px(MAP_PAD),
+                            .spawn((
+                                PileDropZone(zone),
+                                Node {
+                                    width: Val::Percent(100.0),
+                                    flex_direction: FlexDirection::Row,
+                                    align_items: AlignItems::FlexStart,
+                                    justify_content: JustifyContent::Center,
+                                    column_gap: Val::Px(MAP_CELL_GAP),
+                                    margin: UiRect {
+                                        top: Val::Px(MAP_PAD),
+                                        ..default()
+                                    },
                                     ..default()
                                 },
-                                ..default()
-                            })
+                            ))
                             .with_children(|row| {
-                                for cid in tree.content_cards(zone) {
-                                    let card = tree.card(cid).expect("cell card");
+                                // ---- the ENCOUNTER area: encounter card + assigned heroes + a drop slot,
+                                // inside a bordered box (the marked "drop here" area, its own drop zone). ----
+                                if let (Some(area), Some(enc)) = (area, encounter) {
+                                    row.spawn((
+                                        PileDropZone(area),
+                                        Node {
+                                            flex_direction: FlexDirection::Row,
+                                            align_items: AlignItems::FlexStart,
+                                            column_gap: Val::Px(MAP_CELL_GAP),
+                                            padding: UiRect::all(Val::Px(10.0)),
+                                            border: UiRect::all(Val::Px(2.0)),
+                                            flex_shrink: 0.0,
+                                            ..default()
+                                        },
+                                        BorderColor::all(MUTED),
+                                    ))
+                                    .with_children(
+                                        |enc_row| {
+                                            let card = tree.card(enc).expect("encounter card");
+                                            enc_row
+                                                .spawn((slot(), card_elevation(card)))
+                                                .with_children(|t| spawn_card(t, card));
+                                            for &h in &assigned {
+                                                let hc = tree.card(h).expect("assigned hero");
+                                                enc_row
+                                                    .spawn((
+                                                        Movable(TableNode::Card(h)),
+                                                        slot(),
+                                                        card_elevation(hc),
+                                                    ))
+                                                    .with_children(|t| spawn_card(t, hc));
+                                            }
+                                            // A drop slot ("space to drop the next hero") while heroes wait on the
+                                            // bench to be sent in.
+                                            if bench_heroes {
+                                                enc_row.spawn((
+                                                    Node {
+                                                        width: Val::Px(SMALL_W),
+                                                        height: Val::Px(
+                                                            card_layout::SMALL_H as f32,
+                                                        ),
+                                                        border: UiRect::all(Val::Px(2.0)),
+                                                        flex_shrink: 0.0,
+                                                        ..default()
+                                                    },
+                                                    BorderColor::all(MUTED),
+                                                    Pickable::IGNORE,
+                                                ));
+                                            }
+                                        },
+                                    );
+                                }
+                                // ---- the BENCH: the heroes present but not assigned, plus the rumor. ----
+                                for &c in &bench {
+                                    let card = tree.card(c).expect("bench card");
                                     let is_hero = card.card_type() == "hero";
-                                    let selected = tree.is_selected(cid);
-                                    let mut node = Node {
-                                        flex_shrink: 0.0, // keep each card its natural size
-                                        ..default()
-                                    };
-                                    if mustering && is_hero {
-                                        node.border_radius = BorderRadius::all(CUE_RADIUS);
-                                    }
-                                    let mut item = row.spawn((node, card_elevation(card)));
-                                    if mustering && is_hero && selected {
-                                        // Settled into the party: a static solid border, no motion.
-                                        item.insert(Outline::new(
-                                            Val::Px(3.0),
-                                            Val::Px(2.0),
-                                            TARGET_CUE,
-                                        ));
-                                    } else if incomplete && is_hero && !selected {
-                                        // Still needs choosing: the animated "pick me" ring.
-                                        item.insert(ChoicePulse);
+                                    let mut item = row.spawn((slot(), card_elevation(card)));
+                                    if is_hero {
+                                        item.insert(Movable(TableNode::Card(c)));
                                     }
                                     item.with_children(|t| spawn_card(t, card));
                                 }

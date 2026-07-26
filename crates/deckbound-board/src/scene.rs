@@ -520,7 +520,7 @@ mod tests {
             .find(|&p| board.pile(p).map(|q| q.label.as_str()) == Some("Progress"))
             .unwrap();
         let _ = board.move_character(hero, vault, progress);
-        let _ = board.select(hero); // choose the hero (a muster of one); open_fight fields the selected
+        // The hero is the only one present, so open_fight's fallback fields it.
         let arena = crate::arena::open_fight(&mut board, vault).expect("opens");
 
         let s = scene(&board, arena).expect("a fight scene");

@@ -686,21 +686,20 @@ pub fn open_fight(board: &mut Board, place: PileId) -> Option<PileId> {
         let _ = board.set_card_type(meta, "arena-meta");
     }
 
-    // Who fights: the heroes CHOSEN in the muster (the selected ones). As a fallback for a direct open (a
-    // headless launch or a test that did not muster), every hero present fields. Each fielded hero seats
-    // straight into its weapon rank - ranged-only at the back, everything else at the front. Nothing to
-    // declare; the fight opens on the first decision.
-    let present: Vec<CardId> = board
-        .content_cards(place)
-        .into_iter()
-        .filter(|&c| board.card(c).map(|k| k.card_type()) == Some("hero"))
-        .collect();
-    let chosen: Vec<CardId> = present
-        .iter()
-        .copied()
-        .filter(|&c| board.is_selected(c))
-        .collect();
-    let heroes: Vec<CardId> = if chosen.is_empty() { present } else { chosen };
+    // Who fights: the heroes ASSIGNED to this encounter (inside its assignment area). As a fallback for a
+    // direct open (a headless launch or a test that did not assign), every hero present at the cell fields.
+    // Each fielded hero seats straight into its weapon rank - ranged-only at the back, everything else at the
+    // front. Nothing to declare; the fight opens on the first decision.
+    let assigned = crate::board_game::assigned_heroes(board, place);
+    let heroes: Vec<CardId> = if assigned.is_empty() {
+        board
+            .content_cards(place)
+            .into_iter()
+            .filter(|&c| board.card(c).map(|k| k.card_type()) == Some("hero"))
+            .collect()
+    } else {
+        assigned
+    };
     for card in heroes {
         let name = board.card(card).map(|c| c.front_title().to_string())?;
         if let Some((stats, melee, ranged, aoe)) = hero_stats(board, &name) {
@@ -1734,22 +1733,8 @@ mod tests {
             let progress = top_deck(board, "Progress").unwrap();
             let _ = board.move_character(position, place, progress);
         }
-        // Choose who fights, as a muster would: a solo picks one hero, a party takes everyone present.
-        // `open_fight` fields the selected heroes.
-        let present: Vec<CardId> = board
-            .content_cards(place)
-            .into_iter()
-            .filter(|&c| board.card(c).map(|k| k.card_type()) == Some("hero"))
-            .collect();
-        if crate::board_game::is_solo_cell(board, place) {
-            if let Some(&first) = present.first() {
-                let _ = board.select(first);
-            }
-        } else {
-            for hero in present {
-                let _ = board.select(hero);
-            }
-        }
+        // Heroes are marched but not assigned here; `open_fight` falls back to fielding every hero present at
+        // the cell, so the fight opens with exactly the kits this helper marched in.
         open_fight(board, place).expect("a fight opens")
     }
 

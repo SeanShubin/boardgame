@@ -388,6 +388,11 @@ pub struct Encounter {
     /// only foe of a solo, the centrepiece of a party fight (see [`creature_counter`] for the answering kit).
     pub keystone: &'static str,
     pub party: bool,
+    /// How many heroes the encounter has **room** for - the capacity of its assignment area. If everyone
+    /// present fits, they are assigned automatically; if not, the player drags heroes in one at a time up to
+    /// this many. A solo has room for one; a corner / the capstone for the whole party. Tune per-encounter to
+    /// force a choice (a smaller room than the party).
+    pub capacity: usize,
     /// The **lesson** a corner is built to teach ([`Behavior`]), scored by search. `None` for solos (a solo
     /// teaches its keystone's lock, not a formation behavior).
     pub behavior: Option<Behavior>,
@@ -408,6 +413,7 @@ pub const ENCOUNTERS: [Encounter; 9] = [
         flavor: "A blade-master holding the ruined keep, striking back at anyone who closes to melee.",
         keystone: "The Duelist",
         party: false,
+        capacity: 1,
         behavior: None,
         foes: &[("The Duelist", 1)],
     },
@@ -417,6 +423,7 @@ pub const ENCOUNTERS: [Encounter; 9] = [
         flavor: "An armored warden set to guard the sundered vault, unmoved by all but the heaviest blow.",
         keystone: "The Wall",
         party: false,
+        capacity: 1,
         behavior: None,
         foes: &[("The Wall", 1)],
     },
@@ -426,6 +433,7 @@ pub const ENCOUNTERS: [Encounter; 9] = [
         flavor: "A boiling mass of bramble-imps that overruns the gate in a charging tide of thorns.",
         keystone: "The Swarm",
         party: false,
+        capacity: 1,
         behavior: None,
         foes: &[("The Swarm", 1)],
     },
@@ -435,6 +443,7 @@ pub const ENCOUNTERS: [Encounter; 9] = [
         flavor: "A brood nested deep in the salt barrows, spitting bone-shards from the dark behind their kin.",
         keystone: "The Brood",
         party: false,
+        capacity: 1,
         behavior: None,
         foes: &[("The Brood", 1)],
     },
@@ -445,6 +454,7 @@ pub const ENCOUNTERS: [Encounter; 9] = [
         flavor: "Twin wardens bar the burning hollow, their guard so heavy that scattered blows are shrugged off - only one concentrated strike dents them.",
         keystone: "The Wall",
         party: true,
+        capacity: 4,
         behavior: Some(Behavior::Concentration),
         foes: &[("The Wall", 2)],
     },
@@ -454,6 +464,7 @@ pub const ENCOUNTERS: [Encounter; 9] = [
         flavor: "Blade-masters burst from the reeds of the ford - close in and they cut you down, so answer them from range before they reach you.",
         keystone: "The Reaver",
         party: true,
+        capacity: 4,
         behavior: Some(Behavior::Range),
         foes: &[("The Reaver", 3)],
     },
@@ -463,6 +474,7 @@ pub const ENCOUNTERS: [Encounter; 9] = [
         flavor: "The deep churns: swarm upon swarm boils up out of the dark - no single blade can stem the tide, only an area strike clears it.",
         keystone: "The Swarm",
         party: true,
+        capacity: 4,
         behavior: Some(Behavior::Sweep),
         foes: &[("The Swarm", 2)],
     },
@@ -472,6 +484,7 @@ pub const ENCOUNTERS: [Encounter; 9] = [
         flavor: "Wardens anchor the breach while a marksman picks the party off from the rubble behind - you must slip a blade past the wall to silence it.",
         keystone: "The Sniper",
         party: true,
+        capacity: 4,
         behavior: Some(Behavior::Raid),
         foes: &[("The Wall", 3), ("The Sniper", 1)],
     },
@@ -482,6 +495,7 @@ pub const ENCOUNTERS: [Encounter; 9] = [
         flavor: "Everything at once at the crossroads: a swarm overruns the front, wardens anchor the line, a sniper marks you from the dark - first-strike the swarm, slip a blade to the sniper, break the wall.",
         keystone: "The Sniper",
         party: true,
+        capacity: 4,
         behavior: Some(Behavior::CombinedArms),
         foes: &[("The Swarm", 1), ("The Wall", 2), ("The Sniper", 1)],
     },

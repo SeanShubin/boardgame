@@ -68,14 +68,12 @@ pub enum Intention {
     Unequip { label: CardId },
     /// March the hero map-position `position` to the adjacent place `to`.
     March { position: CardId, to: PileId },
-    /// Toggle `hero`'s participation in the muster in progress - tapping a ringed hero in / out of the party
-    /// that will fight this location's encounter. See [`toggle_muster`].
-    ToggleMuster { hero: CardId },
-    /// Confirm the muster at `place`: open the fight with exactly the heroes chosen (the selected ones). Only
-    /// offered when the count is legal. See [`muster_status`].
-    MusterConfirm { place: PileId },
-    /// Abandon the muster at `place`: clear the choice and leave the location as it was. See [`end_muster`].
-    MusterCancel { place: PileId },
+    /// **Enlist** `hero` into `place`'s encounter assignment area (send it to fight), if there is room. See
+    /// [`enlist`].
+    Enlist { hero: CardId, place: PileId },
+    /// **Dismiss** `hero` from `place`'s encounter back to standing at the cell. The inverse of
+    /// [`Intention::Enlist`]; see [`dismiss`].
+    Dismiss { hero: CardId, place: PileId },
     /// Advance the day clock (stand the move-markers back up, lay a new Day Passed).
     AdvanceDay,
     /// Open a v2 fight at the combat-ready `place` (a stationed hero + an encounter).
@@ -108,14 +106,12 @@ impl BoardGame for CardTableGame {
             match *intention {
                 Intention::Unequip { label } => unequip(board, label),
                 Intention::March { position, to } => march(board, position, to),
-                Intention::ToggleMuster { hero } => toggle_muster(board, hero),
-                Intention::MusterConfirm { place } => {
-                    crate::arena::open_fight(board, place);
-                    end_muster(board, place);
-                }
-                Intention::MusterCancel { place } => end_muster(board, place),
+                Intention::Enlist { hero, place } => enlist(board, hero, place),
+                Intention::Dismiss { hero, place } => dismiss(board, hero, place),
                 Intention::AdvanceDay => advance_day(board),
-                Intention::Fight { place } => begin_muster(board, place),
+                Intention::Fight { place } => {
+                    crate::arena::open_fight(board, place);
+                }
                 Intention::Assign { unit, to } => crate::arena::assign(board, unit, to),
                 Intention::Tap { card } => crate::arena::handle_tap(board, card),
                 Intention::Choose { index } => crate::arena::choose(board, index),
@@ -152,8 +148,8 @@ impl BoardGame for CardTableGame {
         onto: DropTarget,
     ) -> Option<Intention> {
         match onto {
-            // Seating is no longer a drag: a hero is chosen for a solo encounter by TAPPING it (see
-            // `tap_intention` / `seat_tap`), the combat-style pick. No card-onto-card drop remains.
+            // No card-onto-card drops: assignment is a hero dropped into a PILE (the encounter area or the
+            // cell), handled below.
             DropTarget::Card(_) => None,
             DropTarget::Pile(dest) => {
                 // In the arena, a hero dropped onto the ground pile its move would land in stages the move
@@ -170,6 +166,31 @@ impl BoardGame for CardTableGame {
                 // A character deck's label dropped back on the Heroes deck un-equips.
                 if top_deck(board, "Heroes") == Some(dest) && is_character_label(board, dragged) {
                     return Some(Intention::Unequip { label: dragged });
+                }
+                let is_hero = board.card(dragged).map(|c| c.card_type()) == Some("hero");
+                // A bench hero dropped into a cell's **encounter area** enlists it (if there is room). `dest`
+                // is that cell's Assigned pile; the hero must be standing at the same cell.
+                if is_hero
+                    && let Some(place) = board.pile(dest).and_then(|p| p.parent())
+                    && assigned_pile(board, place) == Some(dest)
+                    && board.card(dragged).map(|c| c.home()) == Some(place)
+                    && assigned_heroes(board, place).len() < capacity_of(board, place)
+                {
+                    return Some(Intention::Enlist {
+                        hero: dragged,
+                        place,
+                    });
+                }
+                // An assigned hero dropped back onto its cell (out of the encounter area) is dismissed. The
+                // hero's home is the cell's Assigned pile; `dest` is that cell.
+                if is_hero
+                    && assigned_pile(board, dest)
+                        .is_some_and(|a| board.content_cards(a).contains(&dragged))
+                {
+                    return Some(Intention::Dismiss {
+                        hero: dragged,
+                        place: dest,
+                    });
                 }
                 // A hero's map position dropped onto an orthogonally-adjacent place marches there.
                 if can_march(board, dragged, dest) {
@@ -200,9 +221,8 @@ impl BoardGame for CardTableGame {
             Intention::Assign { .. }
                 | Intention::Tap { .. }
                 | Intention::Choose { .. }
-                | Intention::ToggleMuster { .. }
-                | Intention::Fight { .. }
-                | Intention::MusterCancel { .. }
+                | Intention::Enlist { .. }
+                | Intention::Dismiss { .. }
         )
     }
 
@@ -214,10 +234,8 @@ impl BoardGame for CardTableGame {
     }
 
     fn tap_intention(&self, board: &Board, card: CardId) -> Option<Intention> {
-        let Some(arena) = crate::arena::find_arena(board) else {
-            // No fight up: a tap on a hero whose cell is mustering toggles it in / out of the chosen party.
-            return muster_tap(board, card);
-        };
+        // Off a fight there are no per-card taps: assigning heroes to an encounter is a drag, not a tap.
+        let arena = crate::arena::find_arena(board)?;
         // While a fight is up, tapping a combatant edits the staged plan for the current step.
         // An action tile IS a card: tapping one is taking that choice. Its id reads back to the choice index,
         // so the WHAT beat flows through the same tap path as selecting a hero or a target - no button rail.
@@ -240,36 +258,17 @@ impl BoardGame for CardTableGame {
                 ("Cancel battle".to_string(), Intention::CancelFight),
             ];
         }
-        // A place mid-muster offers Confirm (its label saying whether the party is legal) and Cancel.
-        if is_mustering(board, focus) {
-            let (confirm, _legal) = muster_status(board, focus);
-            return vec![
-                (confirm, Intention::MusterConfirm { place: focus }),
-                (
-                    "Cancel".to_string(),
-                    Intention::MusterCancel { place: focus },
-                ),
-            ];
-        }
-        // A place with an encounter and at least one hero present offers to choose who fights (open the muster).
-        if can_fight(board, focus) {
+        // A place whose encounter has at least one hero assigned offers to fight, its label the party size.
+        if let Some(n) = fightable(board, focus) {
+            let plural = if n == 1 { "hero" } else { "heroes" };
             return vec![(
-                "Choose Heroes".to_string(),
+                format!("Fight with {n} {plural}"),
                 Intention::Fight { place: focus },
             )];
         }
         // The day track (Progress zone) offers Advance Day.
         if top_deck(board, "Progress") == Some(focus) {
             return vec![("Advance Day".to_string(), Intention::AdvanceDay)];
-        }
-        Vec::new()
-    }
-
-    /// Mid-muster, the Confirm control (index 0) is disabled while the chosen party is illegal (too few, or
-    /// for a solo too many) - it stays visible, its label saying why (see [`muster_status`]).
-    fn disabled_affordances(&self, board: &Board, focus: PileId) -> Vec<usize> {
-        if is_mustering(board, focus) && !muster_status(board, focus).1 {
-            return vec![0];
         }
         Vec::new()
     }
@@ -381,32 +380,34 @@ fn unequip(board: &mut Board, label: CardId) {
 }
 
 fn march(board: &mut Board, position: CardId, to: PileId) {
-    // Locations are UNCAPPED: any number of heroes may stand on, pass through, or gather at a cell, so
-    // movement is never forced to detour around a full solo. The one-hero limit for a solo lives on its
-    // ENCOUNTER (a hero is seated there to fight it - see `seat_hero`), not on the cell.
+    // Locations are UNCAPPED: any number of heroes may stand on, pass through, or gather at a cell.
     if let Some(progress) = top_deck(board, "Progress") {
         let _ = board.move_character(position, to, progress);
     }
+    // On arrival, auto-fill the destination's encounter if everyone present now fits (see `auto_fill`), so a
+    // hero marched to a fight it fits into is already assigned when you look at the location.
+    auto_fill(board, to);
 }
 
-/// The **Muster** marker on a place: an (empty) sub-pile that exists only while the player is choosing who
-/// fights this location's encounter. Created by [`begin_muster`], removed by [`end_muster`]; its presence is
-/// the whole "we are choosing" mode. `None` when the place is not mustering.
-pub(crate) fn muster_of(board: &Board, place: PileId) -> Option<PileId> {
+/// The encounter's **assignment area** on `place` - the sub-pile holding the heroes sent to fight it. Created
+/// with the cell (see fixtures), so it is always present on a cell that has an encounter.
+pub(crate) fn assigned_pile(board: &Board, place: PileId) -> Option<PileId> {
     board
         .pile(place)?
         .subpiles()
         .into_iter()
-        .find(|&s| board.pile(s).map(|p| p.label.as_str()) == Some("Muster"))
+        .find(|&s| board.pile(s).map(|p| p.label.as_str()) == Some("Assigned"))
 }
 
-/// Whether `place` is currently mustering (choosing its party).
-pub(crate) fn is_mustering(board: &Board, place: PileId) -> bool {
-    muster_of(board, place).is_some()
+/// The heroes **assigned** to `place`'s encounter (inside its assignment area).
+pub(crate) fn assigned_heroes(board: &Board, place: PileId) -> Vec<CardId> {
+    assigned_pile(board, place)
+        .map(|a| board.content_cards(a))
+        .unwrap_or_default()
 }
 
-/// The heroes standing at `place`.
-fn heroes_at(board: &Board, place: PileId) -> Vec<CardId> {
+/// The heroes standing at `place` but **not** assigned (on the "bench" - the cell's own content).
+fn bench_heroes(board: &Board, place: PileId) -> Vec<CardId> {
     board
         .content_cards(place)
         .into_iter()
@@ -414,87 +415,49 @@ fn heroes_at(board: &Board, place: PileId) -> Vec<CardId> {
         .collect()
 }
 
-/// The heroes at `place` currently **chosen** for the fight - the selected (ringed) ones.
-pub(crate) fn mustered(board: &Board, place: PileId) -> Vec<CardId> {
-    heroes_at(board, place)
-        .into_iter()
-        .filter(|&c| board.is_selected(c))
-        .collect()
-}
-
-/// **Begin a muster** at `place`: raise the Muster marker. Nobody is chosen yet - every hero present becomes
-/// a *candidate* (the renderer marks them all choosable), and you tap to pick. The Fight control becomes
-/// Confirm / Cancel (see [`CardTableGame::affordances`]).
-fn begin_muster(board: &mut Board, place: PileId) {
-    if muster_of(board, place).is_none() {
-        let _ = board.add_pile(place, "Muster");
-    }
-}
-
-/// Toggle one hero in / out of the muster (tapping a ringed hero).
-fn toggle_muster(board: &mut Board, hero: CardId) {
-    if board.is_selected(hero) {
-        board.deselect(hero);
-    } else {
-        let _ = board.select(hero);
-    }
-}
-
-/// **End the muster** at `place`: drop the marker and clear every selection. Called on Confirm (after the
-/// fight has opened) and on Cancel.
-fn end_muster(board: &mut Board, place: PileId) {
-    if let Some(m) = muster_of(board, place) {
-        let _ = board.remove_pile(m);
-    }
-    for card in board.selection().to_vec() {
-        board.deselect(card);
-    }
-}
-
-/// The muster's status: the Confirm label to show and whether it is legal, as a running count. A **solo**
-/// encounter is fought by exactly one hero; a **party** encounter by anyone present (at least one). The label
-/// reads "N/1 heroes chosen" and turns into "Fight with N ..." once legal; too few - or, for a solo, too many
-/// - keeps Confirm disabled.
-fn muster_status(board: &Board, place: PileId) -> (String, bool) {
-    let n = mustered(board, place).len();
-    let heroes = |k: usize| if k == 1 { "hero" } else { "heroes" };
-    if is_solo_cell(board, place) {
-        // Exactly one.
-        match n {
-            0 => ("Pick a hero to fight (0/1)".to_string(), false),
-            1 => ("Fight with 1/1 heroes".to_string(), true),
-            _ => (format!("Too many - pick 1 ({n}/1)"), false),
-        }
-    } else {
-        // At least one; no cap.
-        if n == 0 {
-            ("Pick heroes to fight (0 chosen)".to_string(), false)
-        } else {
-            (format!("Fight with {n} {}", heroes(n)), true)
-        }
-    }
-}
-
-/// Interpret a **tap** on a hero while no fight is up: if its cell is mustering, toggle it in / out of the
-/// party. The renderer only routes a tap here while drilled into a mustering cell (see `is_muster_toggle`), so
-/// a hero tapped elsewhere is unaffected.
-fn muster_tap(board: &Board, card: CardId) -> Option<Intention> {
-    let home = board
-        .card(card)
-        .filter(|c| c.card_type() == "hero")
-        .map(|c| c.home())?;
-    is_mustering(board, home).then_some(Intention::ToggleMuster { hero: card })
-}
-
-/// Whether `place` is a **solo cell** - a home-adjacent location whose encounter is a lone fight, not a party
-/// fight. Read from the encounter's `party` flag so the one-hero rule and the cell's own label share a single
-/// source of truth. Party cells (the corners and the capstone) muster the whole band and are not capped.
-pub(crate) fn is_solo_cell(board: &Board, place: PileId) -> bool {
+/// How many heroes `place`'s encounter has **room** for (its capacity), or 0 if it has no encounter.
+pub(crate) fn capacity_of(board: &Board, place: PileId) -> usize {
     board
         .pile(place)
         .map(|p| p.label.clone())
         .and_then(|label| deckbound_content::catalog::encounter_for(&label))
-        .is_some_and(|e| !e.party)
+        .map(|e| e.capacity)
+        .unwrap_or(0)
+}
+
+/// **Enlist** `hero` into `place`'s encounter (move it into the assignment area), if there is still room.
+fn enlist(board: &mut Board, hero: CardId, place: PileId) {
+    let Some(area) = assigned_pile(board, place) else {
+        return;
+    };
+    if assigned_heroes(board, place).len() >= capacity_of(board, place) {
+        return; // full - no room for another
+    }
+    let at = board.content_cards(area).len();
+    let _ = board.move_card(hero, area, at);
+}
+
+/// **Dismiss** `hero` from `place`'s encounter back to standing at the cell (the bench).
+fn dismiss(board: &mut Board, hero: CardId, place: PileId) {
+    let at = board.pile(place).map_or(0, |p| p.cards().len());
+    let _ = board.move_card(hero, place, at);
+}
+
+/// **Auto-fill** `place`'s encounter: if everyone present (bench + already-assigned) fits in its capacity,
+/// send every benched hero in. If they do not all fit, leave the bench alone - the player drags heroes in one
+/// at a time. Idempotent, and only ever *adds* (never dismisses), so it never fights a manual choice.
+fn auto_fill(board: &mut Board, place: PileId) {
+    let capacity = capacity_of(board, place);
+    if capacity == 0 {
+        return; // no encounter here
+    }
+    let bench = bench_heroes(board, place);
+    let total = bench.len() + assigned_heroes(board, place).len();
+    if total <= capacity {
+        for hero in bench {
+            enlist(board, hero, place);
+        }
+    }
 }
 
 fn advance_day(board: &mut Board) {
@@ -551,17 +514,11 @@ fn places_adjacent(board: &Board, a: PileId, b: PileId) -> bool {
 
 // ---- fixed-zone lookups by label ------------------------------------------------------------------
 
-/// Whether `place` can start a fight: it holds an encounter and at least one hero to send. Whether the
-/// eventual party is legal (a solo wants exactly one, a party at least one) is settled during the muster;
-/// this only gates the Fight control that opens it.
-fn can_fight(board: &Board, place: PileId) -> bool {
-    let cards = board.content_cards(place);
-    let has = |t: &str| {
-        cards
-            .iter()
-            .any(|&c| board.card(c).map(|k| k.card_type()) == Some(t))
-    };
-    has("encounter") && has("hero")
+/// The number of heroes **assigned** to `place`'s encounter if a fight can start (at least one is in the
+/// assignment area), else `None`. This gates the Fight control and titles it with the party size.
+fn fightable(board: &Board, place: PileId) -> Option<usize> {
+    let n = assigned_heroes(board, place).len();
+    (n >= 1).then_some(n)
 }
 
 /// Whether the doom oracle's System-deck toggle is currently on. The state lives nowhere but the toggle
@@ -604,20 +561,25 @@ mod tests {
         let card = CardId(1);
         let pile = PileId(1);
 
-        // Staging: freely revisable in place, nothing revealed. Opening a muster and toggling / cancelling it
-        // are staging too - the fight has not begun, and Cancel undoes it in place.
+        // Staging: freely revisable in place, nothing revealed. Enlisting / dismissing a hero into the
+        // encounter is staging too - the fight has not begun, and it is undone by dragging the hero back.
         assert!(!game.is_checkpoint(&Intention::Tap { card }));
         assert!(!game.is_checkpoint(&Intention::Assign {
             unit: card,
             to: pile
         }));
-        assert!(!game.is_checkpoint(&Intention::Fight { place: pile }));
-        assert!(!game.is_checkpoint(&Intention::ToggleMuster { hero: card }));
-        assert!(!game.is_checkpoint(&Intention::MusterCancel { place: pile }));
+        assert!(!game.is_checkpoint(&Intention::Enlist {
+            hero: card,
+            place: pile
+        }));
+        assert!(!game.is_checkpoint(&Intention::Dismiss {
+            hero: card,
+            place: pile
+        }));
 
-        // Commits: the points of no return. Confirming the muster opens the fight.
+        // Commits: the points of no return. Fight opens the arena.
         assert!(game.is_checkpoint(&Intention::Commit));
-        assert!(game.is_checkpoint(&Intention::MusterConfirm { place: pile }));
+        assert!(game.is_checkpoint(&Intention::Fight { place: pile }));
         assert!(game.is_checkpoint(&Intention::March {
             position: card,
             to: pile
@@ -642,13 +604,20 @@ mod tests {
         assert_eq!(board.current_day(progress), 1, "the day advanced");
     }
 
-    /// A card by front-title within a pile (test helper).
+    /// A card by front-title within a pile or any of its sub-piles (test helper) - so a hero counts as "at a
+    /// cell" whether it stands on the bench or sits in the cell's encounter (assignment) area.
     fn card_in(board: &Board, pile: PileId, name: &str) -> Option<CardId> {
-        board
-            .pile(pile)?
+        let p = board.pile(pile)?;
+        if let Some(c) = p
             .cards()
             .into_iter()
             .find(|&c| board.card(c).map(|c| c.front_title()) == Some(name))
+        {
+            return Some(c);
+        }
+        p.subpiles()
+            .into_iter()
+            .find_map(|s| card_in(board, s, name))
     }
 
     /// The party starts assembled, so the only half of the round-trip left is the teardown: **un-equipping**
@@ -714,75 +683,58 @@ mod tests {
         );
     }
 
-    /// **A solo musters exactly one hero.** Fight opens the muster with NOBODY chosen (every hero a
-    /// candidate); Confirm is disabled while zero (too few) or two+ (too many) are picked, and enabled at
-    /// exactly one. Confirm then fields exactly the chosen hero.
+    /// **A solo encounter has room for one.** Marching one hero in auto-fills it (it fits); a second stays on
+    /// the bench (no room). Fight fields exactly the assigned hero.
     #[test]
-    fn a_solo_musters_one_hero() {
+    fn a_solo_has_room_for_one_hero() {
         let game = CardTableGame::default();
         let mut board = game.opening();
         let locations = top_deck(&board, "Locations").unwrap();
         let home = board.pile(locations).unwrap().subpiles()[4]; // Ashfen (centre)
-        let solo = board.pile(locations).unwrap().subpiles()[1]; // Cinderwatch Keep, an orthogonal solo
+        let solo = board.pile(locations).unwrap().subpiles()[1]; // Cinderwatch Keep, a solo (room for 1)
 
-        // BOTH heroes march onto the solo cell - locations are uncapped.
-        for name in ["Marksman", "Raider"] {
-            let h = card_in(&board, home, name).unwrap();
-            game.apply(
-                &mut board,
-                &[Intention::March {
-                    position: h,
-                    to: solo,
-                }],
-            );
-        }
+        // Capacity comes from the encounter catalog.
+        assert_eq!(capacity_of(&board, solo), 1, "a solo has room for one");
 
-        // Fight opens the muster choosing nobody. Zero is too few: Confirm (0) is disabled.
-        game.apply(&mut board, &[Intention::Fight { place: solo }]);
-        assert!(is_mustering(&board, solo), "the cell is mustering");
-        assert!(mustered(&board, solo).is_empty(), "nobody chosen at first");
-        assert_eq!(
-            game.disabled_affordances(&board, solo),
-            vec![0],
-            "Confirm disabled: too few"
+        // March the Raider in: it fits (1 <= 1), so it auto-fills the encounter.
+        let raider = card_in(&board, home, "Raider").unwrap();
+        game.apply(
+            &mut board,
+            &[Intention::March {
+                position: raider,
+                to: solo,
+            }],
         );
-
-        let marksman = card_in(&board, solo, "Marksman").unwrap();
-        let raider = card_in(&board, solo, "Raider").unwrap();
-
-        // Tap the Raider in: one hero chosen, Confirm now enabled.
-        let toggle = game
-            .tap_intention(&board, raider)
-            .expect("a hero tap toggles the muster");
-        game.apply(&mut board, &[toggle]);
-        assert_eq!(mustered(&board, solo), vec![raider], "the Raider is chosen");
-        assert!(
-            game.disabled_affordances(&board, solo).is_empty(),
-            "Confirm enabled at one"
-        );
-
-        // Tap the Marksman in too: two on a solo is too many, Confirm disabled again.
-        let toggle = game.tap_intention(&board, marksman).expect("tap toggles");
-        game.apply(&mut board, &[toggle]);
-        assert_eq!(mustered(&board, solo).len(), 2, "both chosen now");
         assert_eq!(
-            game.disabled_affordances(&board, solo),
-            vec![0],
-            "Confirm disabled: too many"
-        );
-
-        // Tap the Marksman back out: one chosen (the Raider), enabled.
-        let toggle = game.tap_intention(&board, marksman).expect("tap toggles");
-        game.apply(&mut board, &[toggle]);
-        assert_eq!(
-            mustered(&board, solo),
+            assigned_heroes(&board, solo),
             vec![raider],
-            "only the Raider is chosen"
+            "the lone hero auto-fills"
+        );
+        assert_eq!(
+            game.affordances(&board, solo)
+                .first()
+                .map(|(l, _)| l.clone()),
+            Some("Fight with 1 hero".to_string()),
+            "Fight is offered with the party size"
         );
 
-        // Confirm opens the fight with exactly the Raider and clears the muster.
-        game.apply(&mut board, &[Intention::MusterConfirm { place: solo }]);
-        assert!(!is_mustering(&board, solo), "the muster is cleared");
+        // March the Marksman in: now two present, over capacity, so it stays on the bench.
+        let marksman = card_in(&board, home, "Marksman").unwrap();
+        game.apply(
+            &mut board,
+            &[Intention::March {
+                position: marksman,
+                to: solo,
+            }],
+        );
+        assert_eq!(
+            assigned_heroes(&board, solo),
+            vec![raider],
+            "the second hero does not auto-fill"
+        );
+
+        // Fight fields exactly the assigned Raider.
+        game.apply(&mut board, &[Intention::Fight { place: solo }]);
         let arena = crate::arena::find_arena(&board).expect("a fight opened");
         let fielded: Vec<String> = crate::arena::wave(&board, arena)
             .unwrap()
@@ -794,54 +746,77 @@ mod tests {
         assert_eq!(
             fielded,
             vec!["Raider".to_string()],
-            "the solo is fought by the one chosen hero"
+            "the solo is fought by the assigned hero"
         );
     }
 
-    /// **Tapping a hero toggles it in and out of the muster**, and Cancel abandons the whole choice.
+    /// **Dragging enlists and dismisses a hero**: dropping a bench hero into the encounter area assigns it (up
+    /// to capacity), and dropping an assigned hero back on the cell dismisses it. No Fight is offered with an
+    /// empty encounter.
     #[test]
-    fn tapping_a_hero_toggles_it_in_the_muster() {
+    fn dragging_enlists_and_dismisses_a_hero() {
+        use cardtable_model::{BoardGame, DropTarget};
         let game = CardTableGame::default();
         let mut board = game.opening();
         let locations = top_deck(&board, "Locations").unwrap();
         let home = board.pile(locations).unwrap().subpiles()[4];
         let solo = board.pile(locations).unwrap().subpiles()[1];
-        let raider = card_in(&board, home, "Raider").unwrap();
-        game.apply(
-            &mut board,
-            &[Intention::March {
-                position: raider,
-                to: solo,
-            }],
-        );
+        let area = assigned_pile(&board, solo).expect("the cell has an encounter area");
 
-        // Fight opens the muster with nobody chosen (too few, Confirm disabled).
-        game.apply(&mut board, &[Intention::Fight { place: solo }]);
-        assert!(mustered(&board, solo).is_empty(), "nobody chosen at first");
-        assert_eq!(
-            game.disabled_affordances(&board, solo),
-            vec![0],
-            "Confirm disabled: too few"
-        );
-
-        // Tap it in.
-        let toggle = game.tap_intention(&board, raider).expect("tap toggles");
-        game.apply(&mut board, &[toggle]);
-        assert_eq!(mustered(&board, solo), vec![raider], "the hero is chosen");
+        // March both heroes in; the first to arrive auto-fills the solo (room for one), the second benches.
+        for name in ["Marksman", "Raider"] {
+            let h = card_in(&board, home, name).unwrap();
+            game.apply(
+                &mut board,
+                &[Intention::March {
+                    position: h,
+                    to: solo,
+                }],
+            );
+        }
+        // Dismiss whoever auto-filled, to start from an empty encounter.
+        for hero in assigned_heroes(&board, solo) {
+            game.apply(&mut board, &[Intention::Dismiss { hero, place: solo }]);
+        }
         assert!(
-            game.disabled_affordances(&board, solo).is_empty(),
-            "Confirm enabled"
+            assigned_heroes(&board, solo).is_empty(),
+            "encounter starts empty"
+        );
+        assert!(
+            game.affordances(&board, solo).is_empty(),
+            "no Fight with an empty encounter"
         );
 
-        // Tap it back out.
-        let toggle = game.tap_intention(&board, raider).expect("tap toggles");
-        game.apply(&mut board, &[toggle]);
-        assert!(mustered(&board, solo).is_empty(), "toggled back out");
+        let marksman = card_in(&board, solo, "Marksman").unwrap();
+        let raider = card_in(&board, solo, "Raider").unwrap();
 
-        // Cancel abandons the muster and clears the choice.
-        game.apply(&mut board, &[Intention::MusterCancel { place: solo }]);
-        assert!(!is_mustering(&board, solo), "cancel ends the muster");
-        assert!(mustered(&board, solo).is_empty(), "and clears the choice");
+        // Drop a bench hero into the encounter area: enlist.
+        let enlist = game
+            .drop_intention(&board, marksman, DropTarget::Pile(area))
+            .expect("dropping a bench hero into the encounter enlists it");
+        game.apply(&mut board, &[enlist]);
+        assert_eq!(
+            assigned_heroes(&board, solo),
+            vec![marksman],
+            "the hero is enlisted"
+        );
+
+        // The solo is full (room for one): a second bench hero cannot be enlisted.
+        assert!(
+            game.drop_intention(&board, raider, DropTarget::Pile(area))
+                .is_none(),
+            "no room for a second in a solo"
+        );
+
+        // Drop the assigned hero back onto the cell: dismiss.
+        let dismiss = game
+            .drop_intention(&board, marksman, DropTarget::Pile(solo))
+            .expect("dropping an assigned hero on the cell dismisses it");
+        game.apply(&mut board, &[dismiss]);
+        assert!(
+            assigned_heroes(&board, solo).is_empty(),
+            "the hero is dismissed"
+        );
     }
 
     #[test]

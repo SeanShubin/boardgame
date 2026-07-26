@@ -372,13 +372,13 @@ pub fn sample_table() -> Board {
             // keystone creature; a corner fields all four with the keystone doubled.
             let header = typed(&mut tree, place_pile, enc.title, "encounter");
             let mut detail = vec![enc.flavor.to_string()];
-            // Say the cell's rule outright, so "one hero" is read, not learned by surprise: a solo seats a
-            // single hero (a second swaps in), a party fight musters the whole band.
-            detail.push(if enc.party {
-                "Party fight - muster the whole band here.".to_string()
-            } else {
-                "Solo - one hero holds this cell; drop a second and it swaps in.".to_string()
-            });
+            // Say the cell's rule outright: how many heroes fit in the encounter's assignment area. If they
+            // all fit they are sent automatically; otherwise you drag them in one at a time up to this many.
+            detail.push(format!(
+                "Room for {} hero{} - drag heroes into the encounter to send them.",
+                enc.capacity,
+                if enc.capacity == 1 { "" } else { "es" }
+            ));
             let foes: Vec<String> = catalog::encounter_foes(enc)
                 .iter()
                 .map(|(c, q)| {
@@ -399,6 +399,10 @@ pub fn sample_table() -> Board {
                 .expect("rumor card exists");
             tree.set_card_detail(rumor, catalog::encounter_rumor(enc))
                 .expect("rumor detail");
+            // The encounter's **assignment area** - a marked pile holding the heroes sent to fight it (up to
+            // its capacity). Empty at first; heroes are dragged in, or auto-filled when they all fit.
+            tree.add_pile(place_pile, "Assigned")
+                .expect("assignment area pile");
         }
     }
     let loc_zone = typed(&mut tree, locations, "Location", "Label");
@@ -1352,9 +1356,16 @@ mod tests {
         let locations = t.pile(find("Locations").unwrap()).unwrap();
         assert_eq!(locations.subpiles().len(), LOCATIONS.len());
         let ashfen = t.pile(locations.subpiles()[4]).unwrap();
-        assert!(
-            ashfen.subpiles().is_empty(),
-            "Ashfen no longer holds an Inn"
+        // Ashfen holds only its encounter's assignment area now (no Inn).
+        let ashfen_subpiles: Vec<String> = ashfen
+            .subpiles()
+            .iter()
+            .filter_map(|&s| t.pile(s).map(|p| p.label.clone()))
+            .collect();
+        assert_eq!(
+            ashfen_subpiles,
+            vec!["Assigned".to_string()],
+            "Ashfen holds its encounter's assignment area, not an Inn"
         );
 
         // All four heroes stand at Ashfen Crossing — one map-position card each.

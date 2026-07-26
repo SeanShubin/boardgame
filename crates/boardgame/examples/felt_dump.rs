@@ -3,12 +3,11 @@
 //!
 //! The card-table UI is almost entirely math: a card's on-screen rect, which cards are movable, which cards
 //! overlap - all of it is computed and logged. This harness lets that math be read back without a human at
-//! the window. It builds a **mustering solo** position through the public `BoardGame` seam (march two heroes
-//! onto a lone-fight cell, press Fight to open the muster, tap one hero out so only the Raider is chosen),
+//! the window. It builds a **solo cell with heroes present** through the public `BoardGame` seam (march two
+//! heroes onto a lone-fight cell with room for one - the first auto-fills the encounter, the second benches),
 //! drills into that cell, then runs the actual `BoardGamePlugin` + `LoggingPlugin` for a few frames so the
-//! felt settles and the state log is written. It prints the muster state (which heroes are selected/ringed,
-//! and the Confirm control + whether it is disabled) and then `screen.txt` - the cell laid out as a row
-//! (encounter, rumors, the heroes), each card's rect, and the `overlaps` line the running app shows.
+//! felt settles and the state log is written. It prints the assignment (who is in the encounter area vs on
+//! the bench, and the Fight control) and then `screen.txt` - each card's rect and the `overlaps` line.
 //!
 //! Run: `cargo run -p boardgame --example felt_dump`
 
@@ -42,7 +41,8 @@ fn main() {
             .find(|&c| board.card(c).is_some_and(|k| k.front_title() == name))
     };
 
-    // Both heroes march onto the solo cell - locations are uncapped.
+    // Both heroes march onto the solo cell (room for one). The first to arrive auto-fills the encounter; the
+    // second benches.
     for hero in ["Marksman", "Raider"] {
         let h = name_in(&board, home, hero).expect("hero stationed at Ashfen");
         game.apply(
@@ -54,34 +54,36 @@ fn main() {
         );
     }
 
-    // Press Fight to open the muster: nobody is chosen yet, every hero a candidate. Tap the Raider to pick
-    // it (selected -> ringed); the Marksman stays a candidate.
-    game.apply(&mut board, &[Intention::Fight { place: solo }]);
-    let raider = name_in(&board, solo, "Raider").expect("the Raider stands on the cell");
-    if let Some(toggle) = game.tap_intention(&board, raider) {
-        game.apply(&mut board, &[toggle]);
-    }
-
-    // Report the muster state that the rings and the Confirm control are drawn from (rings are transient
-    // overlay dots, not cards, so they are not in screen.txt - but the selection that drives them is here).
+    // Report the assignment the encounter area and Fight control are drawn from: the assigned heroes live in
+    // the cell's encounter (its sub-pile), the rest stand on the bench (the cell's own content).
     let names = |ids: &[cardtable_model::CardId]| -> Vec<String> {
         ids.iter()
             .filter_map(|&c| board.card(c).map(|k| k.front_title().to_string()))
             .collect()
     };
-    let selected = board.selection().to_vec();
+    let area = board
+        .pile(solo)
+        .unwrap()
+        .subpiles()
+        .into_iter()
+        .next()
+        .expect("the cell has an encounter area");
+    let assigned: Vec<cardtable_model::CardId> = board.pile(area).unwrap().cards();
+    let bench: Vec<cardtable_model::CardId> = board
+        .pile(solo)
+        .unwrap()
+        .cards()
+        .into_iter()
+        .filter(|&c| board.card(c).is_some_and(|k| k.card_type() == "hero"))
+        .collect();
     let affordances: Vec<String> = game
         .affordances(&board, solo)
         .into_iter()
         .map(|(label, _)| label)
         .collect();
-    let disabled = game.disabled_affordances(&board, solo);
-    // Selected heroes wear a static border; while the party is illegal (Confirm disabled), the unpicked
-    // heroes wear the animated "pick me" ring - transient dots, so not in screen.txt, but the state is here.
-    println!("MUSTER: selected (static border) = {:?}", names(&selected));
-    println!(
-        "MUSTER: controls = {affordances:?}, disabled = {disabled:?} (non-empty => unpicked heroes animate)\n"
-    );
+    println!("ENCOUNTER: assigned (in the area) = {:?}", names(&assigned));
+    println!("ENCOUNTER: bench (standing) = {:?}", names(&bench));
+    println!("ENCOUNTER: controls = {affordances:?}\n");
 
     // ---- 2. Drill into the solo cell so the felt shows that zone. ----
     board.focus(solo).expect("focus the solo cell");
@@ -121,6 +123,6 @@ fn main() {
     };
 
     let _ = std::fs::remove_file("screen.txt");
-    println!("========== SOLO CELL, mustering (Raider chosen) ==========");
+    println!("========== SOLO CELL: encounter area + bench ==========");
     println!("{}", settle(&mut app));
 }
