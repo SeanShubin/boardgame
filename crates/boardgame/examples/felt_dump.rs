@@ -14,7 +14,7 @@
 use bevy::prelude::*;
 use cardtable::{BoardGamePlugin, LoggingPlugin, Table};
 use cardtable_model::BoardGame;
-use deckbound_board::{CardTableGame, Intention};
+use deckbound_board::CardTableGame;
 
 fn main() {
     // ---- 1. Build a seated-solo position through the public seam (mirrors the board_game unit test). ----
@@ -32,27 +32,9 @@ fn main() {
     let home = cells[4]; // Ashfen (centre) - where the party starts stationed
     let solo = cells[1]; // Cinderwatch Keep - an orthogonal lone-fight cell
 
-    let name_in = |board: &cardtable_model::Board, pile, name: &str| {
-        board
-            .pile(pile)
-            .unwrap()
-            .cards()
-            .into_iter()
-            .find(|&c| board.card(c).is_some_and(|k| k.front_title() == name))
-    };
-
-    // Both heroes march onto the solo cell (room for one). The first to arrive auto-fills the encounter; the
-    // second benches.
-    for hero in ["Marksman", "Raider"] {
-        let h = name_in(&board, home, hero).expect("hero stationed at Ashfen");
-        game.apply(
-            &mut board,
-            &[Intention::March {
-                position: h,
-                to: solo,
-            }],
-        );
-    }
+    // Reproduce the crowded case: the whole party (four heroes) stands at Ashfen (the capstone cell), so the
+    // location screen must lay out an encounter + four bench heroes + the rumor without flinging cards off.
+    let _ = solo;
 
     // Report the assignment the encounter area and Fight control are drawn from: the assigned heroes live in
     // the cell's encounter (its sub-pile), the rest stand on the bench (the cell's own content).
@@ -62,7 +44,7 @@ fn main() {
             .collect()
     };
     let area = board
-        .pile(solo)
+        .pile(home)
         .unwrap()
         .subpiles()
         .into_iter()
@@ -70,14 +52,14 @@ fn main() {
         .expect("the cell has an encounter area");
     let assigned: Vec<cardtable_model::CardId> = board.pile(area).unwrap().cards();
     let bench: Vec<cardtable_model::CardId> = board
-        .pile(solo)
+        .pile(home)
         .unwrap()
         .cards()
         .into_iter()
         .filter(|&c| board.card(c).is_some_and(|k| k.card_type() == "hero"))
         .collect();
     let affordances: Vec<String> = game
-        .affordances(&board, solo)
+        .affordances(&board, home)
         .into_iter()
         .map(|(label, _)| label)
         .collect();
@@ -85,8 +67,8 @@ fn main() {
     println!("ENCOUNTER: bench (standing) = {:?}", names(&bench));
     println!("ENCOUNTER: controls = {affordances:?}\n");
 
-    // ---- 2. Drill into the solo cell so the felt shows that zone. ----
-    board.focus(solo).expect("focus the solo cell");
+    // ---- 2. Drill into the cell so the felt shows that zone. ----
+    board.focus(home).expect("focus the cell");
 
     // ---- 3. Run the real renderer headlessly; let mirror_screen write screen.txt. ----
     let mut app = App::new();
@@ -115,7 +97,7 @@ fn main() {
 
     // Settle the felt (fonts load, UI builds, a settled frame is written), then read screen.txt back.
     let settle = |app: &mut App| {
-        for _ in 0..80 {
+        for _ in 0..150 {
             app.update();
         }
         std::fs::read_to_string("screen.txt")

@@ -1007,6 +1007,12 @@ fn animate_nodes(
         return;
     }
     let focus = table.0.focus_id();
+    // A drilled-in place **cell** is laid out by `build_ui` with flex (the encounter area + the bench), so the
+    // table never owns its cards' `left/top` - animating them to their model positions would scatter the flex
+    // layout into the Free-zone cascade. Excluded here the same way flex `ModalTile`s are.
+    if table.0.pile(focus).and_then(|p| p.parent()) == top_deck(&table.0, "Locations") {
+        return;
+    }
     // The table (root) is never a structured zone — it's laid out by `settle_table_piles` (an exact
     // constant-gap row), so its piles keep their model position. Only a *drilled-in* List/Grid reflows
     // here, mirroring how `build_ui` special-cases `at_root`.
@@ -3635,8 +3641,10 @@ fn build_ui(
                             flex_shrink: 0.0,
                             ..default()
                         };
-                        // The whole location screen is ONE row (dropping a hero on it, off the encounter,
-                        // dismisses it): the marked ENCOUNTER area on the left, then the BENCH heroes + rumor.
+                        // The whole location screen is ONE **wrapping** row (dropping a hero on it, off the
+                        // encounter, dismisses it): the marked ENCOUNTER area first, then the BENCH heroes +
+                        // rumor. It wraps and left-aligns so a crowded cell (a corner, the capstone, a whole
+                        // party) flows onto more lines instead of overflowing off the screen edges.
                         surface
                             .spawn((
                                 PileDropZone(zone),
@@ -3644,8 +3652,9 @@ fn build_ui(
                                     width: Val::Percent(100.0),
                                     flex_direction: FlexDirection::Row,
                                     align_items: AlignItems::FlexStart,
-                                    justify_content: JustifyContent::Center,
+                                    justify_content: JustifyContent::FlexStart,
                                     column_gap: Val::Px(MAP_CELL_GAP),
+                                    padding: UiRect::horizontal(Val::Px(MAP_CELL_GAP)),
                                     margin: UiRect {
                                         top: Val::Px(MAP_PAD),
                                         ..default()
