@@ -410,15 +410,22 @@ fn dismiss(board: &mut Board, hero: CardId, _place: PileId) {
     board.deselect(hero);
 }
 
-/// **Auto-fill** `place`'s encounter: if everyone present fits in its capacity, send them all in. If they do
-/// not all fit, leave them on the bench - the player drags heroes in one at a time. Only ever *adds* (never
-/// dismisses), so it never fights a manual choice.
+/// **Auto-fill** `place`'s encounter, **all-or-nothing**: if everyone present fits in its capacity, send them
+/// all in; if they do NOT all fit, send **nobody** - who fights becomes a human decision, so the encounter
+/// starts empty and the player drags heroes in one at a time. (Clears any prior auto-fill when a newcomer
+/// tips the cell over capacity - that is the "too crowded, you decide" moment.)
 pub(crate) fn auto_fill(board: &mut Board, place: PileId) {
     let capacity = capacity_of(board, place);
+    if capacity == 0 {
+        return; // no encounter here
+    }
     let heroes = heroes_at(board, place);
-    if capacity > 0 && heroes.len() <= capacity {
-        for hero in heroes {
+    let fits = heroes.len() <= capacity;
+    for hero in heroes {
+        if fits {
             let _ = board.select(hero);
+        } else {
+            board.deselect(hero);
         }
     }
 }
@@ -600,8 +607,9 @@ mod tests {
         );
     }
 
-    /// **A solo encounter has room for one.** Marching one hero in auto-fills it (it fits); a second stays on
-    /// the bench (no room). Fight fields exactly the assigned hero.
+    /// **A solo encounter has room for one.** Marching one hero in auto-fills it (it fits); a second tips it
+    /// over capacity, so auto-fill (all-or-nothing) clears the default and you choose by hand. Fight fields
+    /// exactly the assigned hero.
     #[test]
     fn a_solo_has_room_for_one_hero() {
         let game = CardTableGame::default();
@@ -635,7 +643,8 @@ mod tests {
             "Fight is offered with the party size"
         );
 
-        // March the Marksman in: now two present, over capacity, so it stays on the bench.
+        // March the Marksman in: now two present, over the room for one. Auto-fill is all-or-nothing, so
+        // NOBODY is assigned - who fights is now a human decision, and no Fight is offered yet.
         let marksman = card_in(&board, home, "Marksman").unwrap();
         game.apply(
             &mut board,
@@ -644,13 +653,28 @@ mod tests {
                 to: solo,
             }],
         );
+        assert!(
+            assigned_heroes(&board, solo).is_empty(),
+            "over capacity: nobody defaults in"
+        );
+        assert!(
+            game.affordances(&board, solo).is_empty(),
+            "no Fight until someone is chosen"
+        );
+
+        // Choose the Raider by hand; Fight then fields exactly it.
+        game.apply(
+            &mut board,
+            &[Intention::Enlist {
+                hero: raider,
+                place: solo,
+            }],
+        );
         assert_eq!(
             assigned_heroes(&board, solo),
             vec![raider],
-            "the second hero does not auto-fill"
+            "the chosen hero is assigned"
         );
-
-        // Fight fields exactly the assigned Raider.
         game.apply(&mut board, &[Intention::Fight { place: solo }]);
         let arena = crate::arena::find_arena(&board).expect("a fight opened");
         let fielded: Vec<String> = crate::arena::wave(&board, arena)

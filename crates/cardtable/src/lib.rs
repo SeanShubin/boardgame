@@ -1155,11 +1155,36 @@ fn places_orthogonally_adjacent(table: &Board, a: PileId, b: PileId) -> bool {
     ra.abs_diff(rb) + ca.abs_diff(cb) == 1
 }
 
+/// A place cell's encounter **capacity** - how many heroes it may hold - carried on the encounter card's
+/// `pair_key` (a free generic slot the game sets from its catalog). 0 if the cell has no encounter.
+fn encounter_capacity(table: &Board, cell: PileId) -> usize {
+    table
+        .content_cards(cell)
+        .into_iter()
+        .find(|&c| table.card(c).is_some_and(|k| k.card_type() == "encounter"))
+        .and_then(|c| table.card(c))
+        .and_then(|k| k.pair_key())
+        .unwrap_or(0) as usize
+}
+
+/// The heroes currently **assigned** to `cell`'s encounter - its selected heroes standing there.
+fn assigned_at(table: &Board, cell: PileId) -> usize {
+    table
+        .content_cards(cell)
+        .into_iter()
+        .filter(|&c| table.card(c).is_some_and(|k| k.card_type() == "hero") && table.is_selected(c))
+        .count()
+}
+
+/// Whether `cell`'s encounter still has room for another hero (fewer assigned than its capacity).
+fn encounter_has_room(table: &Board, cell: PileId) -> bool {
+    assigned_at(table, cell) < encounter_capacity(table, cell)
+}
+
 /// Whether the held hero `dragged` may legally be dropped on the pile `target`:
 /// - on the **map** (Locations focused), a bench hero **marches** to an orthogonally-adjacent place;
 /// - drilled into a **cell**, a bench hero **enlists** into that cell's encounter area (a sub-pile of the
-///   cell), and an **assigned** hero **dismisses** back onto the cell. (Capacity is enforced by the game on
-///   the drop; the glow shows the area regardless.)
+///   cell) while it has room, and an **assigned** hero **dismisses** back onto the cell.
 pub(crate) fn can_drop_on_pile(table: &Board, dragged: CardId, target: PileId) -> bool {
     let Some(card) = table.card(dragged).filter(|c| c.card_type() == "hero") else {
         return false;
@@ -1177,11 +1202,12 @@ pub(crate) fn can_drop_on_pile(table: &Board, dragged: CardId, target: PileId) -
         return places_orthogonally_adjacent(table, home, target);
     }
     // ENLIST: an unassigned (unselected) hero standing at a cell, dropped into that cell's encounter area
-    // (its sub-pile marker).
+    // (its sub-pile marker) - only while the encounter still has room.
     if let Some(cell) = table.pile(target).and_then(|p| p.parent())
         && places.contains(&cell)
         && home == cell
         && !table.is_selected(dragged)
+        && encounter_has_room(table, cell)
     {
         return true;
     }
@@ -3659,7 +3685,10 @@ fn build_ui(
                             // selection), but show anything that ended up inside it so a card can never hide.
                             .chain(area.into_iter().flat_map(|a| tree.content_cards(a)))
                             .collect();
-                        let bench_heroes = bench.iter().copied().any(is_hero);
+                        // Show a "drop the next hero" slot only while heroes wait on the bench AND the
+                        // encounter still has room - a full encounter must not invite another.
+                        let show_drop_slot =
+                            bench.iter().copied().any(is_hero) && encounter_has_room(tree, zone);
                         // A card wrapper that keeps its natural size in the flex row.
                         let slot = || Node {
                             flex_shrink: 0.0,
@@ -3719,22 +3748,39 @@ fn build_ui(
                                                     ))
                                                     .with_children(|t| spawn_card(t, hc));
                                             }
-                                            // A drop slot ("space to drop the next hero") while heroes wait on the
-                                            // bench to be sent in.
-                                            if bench_heroes {
-                                                enc_row.spawn((
-                                                    Node {
-                                                        width: Val::Px(SMALL_W),
-                                                        height: Val::Px(
-                                                            card_layout::SMALL_H as f32,
-                                                        ),
-                                                        border: UiRect::all(Val::Px(2.0)),
-                                                        flex_shrink: 0.0,
-                                                        ..default()
-                                                    },
-                                                    BorderColor::all(MUTED),
-                                                    Pickable::IGNORE,
-                                                ));
+                                            // A drop slot, shown only while heroes wait on the bench and the
+                                            // encounter has room. It reads as an invitation - a
+                                            // selectable-coloured outline card labelled "drop a hero here" -
+                                            // so it is clear a hero belongs in it.
+                                            if show_drop_slot {
+                                                enc_row
+                                                    .spawn((
+                                                        Node {
+                                                            width: Val::Px(SMALL_W),
+                                                            height: Val::Px(
+                                                                card_layout::SMALL_H as f32,
+                                                            ),
+                                                            border: UiRect::all(Val::Px(2.0)),
+                                                            flex_shrink: 0.0,
+                                                            align_items: AlignItems::Center,
+                                                            justify_content: JustifyContent::Center,
+                                                            padding: UiRect::all(Val::Px(6.0)),
+                                                            ..default()
+                                                        },
+                                                        BorderColor::all(SELECTABLE_CUE),
+                                                        Pickable::IGNORE,
+                                                    ))
+                                                    .with_children(|slot| {
+                                                        slot.spawn((
+                                                            Text::new("+ drop a\nhero here"),
+                                                            TextFont {
+                                                                font_size: FONT_BODY,
+                                                                ..default()
+                                                            },
+                                                            TextColor(SELECTABLE_CUE),
+                                                            Pickable::IGNORE,
+                                                        ));
+                                                    });
                                             }
                                         },
                                     );

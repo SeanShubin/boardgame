@@ -371,6 +371,11 @@ pub fn sample_table() -> Board {
             // into the battle arena when a fight starts. A solo (a home-adjacent cell) fields its one
             // keystone creature; a corner fields all four with the keystone doubled.
             let header = typed(&mut tree, place_pile, enc.title, "encounter");
+            // Carry the encounter's **capacity** on its card (its `pair_key`, a free generic slot) so the
+            // renderer can tell when the encounter is full - hiding the drop slot and refusing another hero -
+            // without knowing the catalog.
+            tree.set_card_pair_key(header, enc.capacity as u32)
+                .expect("encounter capacity");
             let mut detail = vec![enc.flavor.to_string()];
             // Say the cell's rule outright: a party fight takes the whole band (no limit); a solo has room for
             // a set number. If everyone present fits they are sent automatically; otherwise you drag them in
