@@ -3655,6 +3655,9 @@ fn build_ui(
                             .filter(|&c| {
                                 Some(c) != encounter && !(is_hero(c) && tree.is_selected(c))
                             })
+                            // Defensive: the encounter area marker pile should be empty (assignment is
+                            // selection), but show anything that ended up inside it so a card can never hide.
+                            .chain(area.into_iter().flat_map(|a| tree.content_cards(a)))
                             .collect();
                         let bench_heroes = bench.iter().copied().any(is_hero);
                         // A card wrapper that keeps its natural size in the flex row.

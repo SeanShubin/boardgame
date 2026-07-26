@@ -190,12 +190,10 @@ fn apply_drop<G>(
         }
         game.0.apply(&mut table.0, &[intention]);
         "applied a game move"
-    } else if let DropTarget::Pile(dest) = onto {
-        history.push(&table.0); // a plain card move rearranges the board - always worth coming back to
-        let at = table.0.pile(dest).map_or(0, |p| p.cards().len());
-        let _ = table.0.move_card(dragged, dest, at);
-        "default move into pile"
     } else {
+        // The game owns every board change - a drop it does not recognize is not a move, it just settles
+        // back. (There is no generic "drop a card into any pile to move it" fallback: that let a non-game
+        // card, e.g. a rumor, be dragged into a pile and vanish from the cell it belonged to.)
         "no move (settled back)"
     };
     trace.0.push(format!(
