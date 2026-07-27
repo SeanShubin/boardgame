@@ -115,6 +115,7 @@ impl Plugin for CardTablePlugin {
             .init_resource::<AffordanceClick>()
             .init_resource::<AffordanceLabels>()
             .init_resource::<DisabledAffordances>()
+            .init_resource::<crate::board_driver::ZoneStatus>()
             .init_resource::<SceneState>()
             .init_resource::<DropTrace>()
             .init_resource::<FontSample>()
@@ -1793,6 +1794,7 @@ fn redraw(
     affordances: Res<AffordanceLabels>,
     disabled: Res<DisabledAffordances>,
     scene: Res<SceneState>,
+    zone_status: Res<crate::board_driver::ZoneStatus>,
     history: Res<crate::board_driver::BoardHistory>,
     font_sample: Res<FontSample>,
     ui_fonts: Option<Res<UiFonts>>,
@@ -1822,6 +1824,7 @@ fn redraw(
         front.0,
         &affordances.0,
         &disabled.0,
+        zone_status.0.as_deref(),
     );
 }
 
@@ -3319,6 +3322,7 @@ fn build_ui(
     front: Option<CardId>,
     affordances: &[String],
     disabled: &[usize],
+    status: Option<&str>,
 ) {
     // Defensive: a stale / incompatible save could focus a pile that no longer exists — fall back to the
     // root rather than panic the draw.
@@ -3874,7 +3878,9 @@ fn build_ui(
                     top: Val::Px(6.0),
                     left: Val::Px(0.0),
                     width: Val::Percent(100.0),
-                    justify_content: JustifyContent::Center,
+                    flex_direction: FlexDirection::Column,
+                    align_items: AlignItems::Center,
+                    row_gap: Val::Px(2.0),
                     ..default()
                 },
                 GlobalZIndex(10),
@@ -3891,6 +3897,19 @@ fn build_ui(
                     TextColor(INK),
                     Pickable::IGNORE,
                 ));
+                // A passive game-declared status under the title (e.g. "3 of 9 encounters cleared"), read-only.
+                if let Some(line) = status {
+                    title.spawn((
+                        Pinned,
+                        Text::new(line.to_string()),
+                        TextFont {
+                            font_size: FONT_BODY,
+                            ..default()
+                        },
+                        TextColor(INK.with_alpha(0.7)),
+                        Pickable::IGNORE,
+                    ));
+                }
             });
             if !at_root {
                 root.spawn((

@@ -112,6 +112,12 @@ pub struct AffordanceLabels(pub Vec<String>);
 #[derive(Resource, Default)]
 pub struct DisabledAffordances(pub Vec<usize>);
 
+/// A passive one-line status for the focused zone (e.g. a progress counter), drained from
+/// [`BoardGame::status_line`](cardtable_model::BoardGame::status_line) by [`sync_affordances`] and drawn under
+/// the zone title. `None` = nothing to show.
+#[derive(Resource, Default)]
+pub struct ZoneStatus(pub Option<String>);
+
 /// The **modal scene** the game wants drawn in place of the felt (a combat arena), or `None` for the ordinary
 /// table. Filled by [`sync_affordances`] from [`BoardGame::scene`](cardtable_model::BoardGame::scene); the
 /// renderer draws it without knowing what it means. Core-owned so `redraw` / the arrow overlay read it
@@ -314,6 +320,7 @@ fn sync_affordances<G>(
     mut disabled: ResMut<DisabledAffordances>,
     mut affordances: ResMut<Affordances<G>>,
     mut scene: ResMut<SceneState>,
+    mut status: ResMut<ZoneStatus>,
 ) where
     G: BoardGame + Send + Sync + 'static,
     G::Intention: Send + Sync + 'static,
@@ -327,6 +334,7 @@ fn sync_affordances<G>(
         .collect();
     disabled.0 = game.0.disabled_affordances(&table.0, focus);
     scene.0 = game.0.scene(&table.0, focus);
+    status.0 = game.0.status_line(&table.0, focus);
 }
 
 // ---- the plugin ----------------------------------------------------------------------------------

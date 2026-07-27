@@ -265,6 +265,19 @@ impl BoardGame for CardTableGame {
         Vec::new()
     }
 
+    /// The Locations map shows how far the run has come: how many encounters are cleared of the total. Only on
+    /// the map grid itself (not a drilled-in place, not during a fight).
+    fn status_line(&self, board: &Board, focus: PileId) -> Option<String> {
+        if crate::arena::find_arena(board).is_some() {
+            return None;
+        }
+        if top_deck(board, "Locations") != Some(focus) {
+            return None;
+        }
+        let (cleared, total) = encounters_cleared(board);
+        Some(format!("{cleared} of {total} encounters cleared"))
+    }
+
     /// While a fight is up, the game draws it as a modal [`Scene`] (the arena); otherwise the felt.
     fn scene(&self, board: &Board, focus: PileId) -> Option<Scene> {
         let mut scene = crate::scene::scene(board, focus)?;
@@ -510,6 +523,34 @@ fn top_deck(board: &Board, label: &str) -> Option<PileId> {
         .find(|&s| board.pile(s).map(|p| p.label.as_str()) == Some(label))
 }
 
+/// `(cleared, total)` across the Locations map: `total` = cells that carry an encounter; `cleared` = those
+/// left with a "Victory" record (a beaten fight leaves one, see `arena::record_outcome`; the encounter itself
+/// stays standing so it can be re-fought).
+fn encounters_cleared(board: &Board) -> (usize, usize) {
+    let Some(loc) = top_deck(board, "Locations").and_then(|l| board.pile(l)) else {
+        return (0, 0);
+    };
+    let mut cleared = 0;
+    let mut total = 0;
+    for place in loc.subpiles() {
+        let Some(p) = board.pile(place) else { continue };
+        if deckbound_content::catalog::encounter_for(&p.label).is_none() {
+            continue; // an empty cell (no roster) is not an encounter
+        }
+        total += 1;
+        let won = p.subpiles().into_iter().any(|sp| {
+            board
+                .pile(sp)
+                .map(|r| r.label == "Victory")
+                .unwrap_or(false)
+        });
+        if won {
+            cleared += 1;
+        }
+    }
+    (cleared, total)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -547,6 +588,35 @@ mod tests {
             to: pile
         }));
         assert!(game.is_checkpoint(&Intention::AdvanceDay));
+    }
+
+    /// The Locations map reports how many encounters are cleared, counting "Victory" records - and only on the
+    /// map grid, not a drilled-in place or the root.
+    #[test]
+    fn locations_status_counts_cleared_encounters() {
+        let mut board = sample_table();
+        let locations = top_deck(&board, "Locations").expect("Locations map");
+        let game = CardTableGame::default();
+
+        // Fresh map: nothing cleared, every cell carries an encounter.
+        assert_eq!(encounters_cleared(&board), (0, 9));
+        assert_eq!(
+            game.status_line(&board, locations).as_deref(),
+            Some("0 of 9 encounters cleared"),
+        );
+
+        // Beat one cell: a fight leaves a "Victory" record subpile at the place.
+        let place = board.pile(locations).unwrap().subpiles()[0];
+        board.add_pile(place, "Victory").expect("record pile");
+        assert_eq!(encounters_cleared(&board), (1, 9));
+        assert_eq!(
+            game.status_line(&board, locations).as_deref(),
+            Some("1 of 9 encounters cleared"),
+        );
+
+        // The readout is map-only.
+        assert_eq!(game.status_line(&board, place), None);
+        assert_eq!(game.status_line(&board, board.root_id()), None);
     }
 
     #[test]

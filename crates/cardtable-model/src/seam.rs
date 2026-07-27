@@ -63,6 +63,15 @@ pub trait BoardGame {
         Vec::new()
     }
 
+    /// A passive one-line **status** for the currently-focused zone: read-only derived text drawn under the
+    /// zone's title (e.g. a progress counter like "3 of 9 encounters cleared"). Unlike an affordance it is
+    /// never clickable and carries no intention - it is pure information the game surfaces. `None` (the
+    /// default) = nothing to add.
+    fn status_line(&self, board: &Board, focus: PileId) -> Option<String> {
+        let _ = (board, focus);
+        None
+    }
+
     /// Interpret a click on the [`Scene`]'s choice at `index` (into [`Scene::choices`](crate::Scene::choices))
     /// — the decision the game is currently asking for. `None` if it means nothing (a barred option). Most
     /// games ask for no such decisions, so the default is `None`.
