@@ -27,6 +27,14 @@ wrong by default*. The old `notes/` notes are **frozen exploration** and are
 **not authoritative** — many are stale. When you are unsure, **ask the human; do
 not invent, and do not promote a note or the code to truth.**
 
+Separately from those four game-truths: how the deployed **card-table app**
+*realizes* the rules — the player decision surface it presents, the AI and dodge
+**policies** it runs, and the presentation — is the **App spec** (**`app-spec/`**,
+e.g. `app-spec/combat.md`). It is app behavior that **conforms to** the Spec (the
+app may do *more*, never contradict), not a fifth source of game truth. Working on
+the arena, the card-table UI, or the combat AI? Start there. Working on the game's
+rules? The Spec wins.
+
 ### Motivated rules — the bar every rule must clear
 
 A *simple* rule can still be hard to hold if it is **arbitrary** — nothing explains
@@ -201,6 +209,21 @@ provisioned** is a Spec change made in `physical-cards.md` — not in the combat
 not smuggled into the code. Embodiment is spec-level (invariants + a procedure), not a mere
 implementation detail.
 
+### App spec — *how the card-table app realizes the rules (not game truth)*
+
+**`app-spec/`** (e.g. **`app-spec/combat.md`**). The Spec above is the **game** —
+what any faithful implementation or a tabletop run must obey. The App spec is one
+level down: how *this* deployed **card-table app** presents and plays those rules —
+the **decision surface** (which choices it surfaces to the player, and their
+defaults), the **policies** it runs (the suggested bid, the automatic dodge, the
+scripted-foe behavior, the doom oracle), and the **presentation** (vocabulary,
+tracks, badges, the log). It **conforms to** the Spec: the app may add choices or
+smarter defaults, but never contradict a rule. It is **not** authoritative over the
+Spec — where they disagree, the app is doing more than the rules require, or it is a
+defect. The dividing test: *would a faithful tabletop port need it?* Yes → Spec; it
+is this app's call → App spec. (Mirrors the code split: rules ↔ `crates/rules`, app
+↔ `crates/deckbound-board` + `crates/cardtable`.)
+
 ### `booklet.ron` — *the print master (components & numbers)*
 
 **`crates/deckbound/data/booklet.ron`**. The official list of **every card,
@@ -239,6 +262,9 @@ edit: a "**Superseded by `canon/2-spec/…`**" banner. Do not act on them over t
 2. **Charter** (`canon/1-charter.md`) — the intent.
 3. **Spec** (`canon/2-spec/`) — the mechanics.
 4. **`booklet.ron`** — the actual pieces and numbers.
+5. **App spec** (`app-spec/`) — how the deployed card-table app realizes the rules;
+   read this when you work on the app itself (the arena, the UI, the combat AI),
+   not the game rules.
 
 Read `notes/` notes only as *background*, and only after the above, knowing they
 are non-authoritative.

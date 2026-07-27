@@ -20,6 +20,13 @@ The dissolved crossing contest's bid-tree exploration is kept as history in
 the surviving bid math is stated inline under Global rules. This document is the
 *frame* - the order of play, and who may do what when.
 
+This is the **Rules spec**: the game itself, what any faithful implementation (or
+a tabletop run) must obey. How the deployed card-table app *realizes* these rules -
+the player's decision surface, the suggested bids and the automatic dodge it runs,
+the doom oracle, and the presentation - lives in the **App spec**
+([`../../app-spec/combat.md`](../../app-spec/combat.md)). The dividing test: would a
+faithful tabletop port need it? Yes -> here; no, it is this app's choice -> App spec.
+
 ## Two principles, stated once
 
 **1. Every step is a simultaneous declare/reveal.** At each step BOTH sides
@@ -94,12 +101,13 @@ Eligibility is the branching rule: a body with no rank, target, or tempo for a
 step simply has no declaration there. The primitive under every strike is the
 same **Interaction**, four minor steps: **Target** (name whom, or pass) ->
 **Bid** (the reach contest - tempo flipped at Finesse against the dodge floor)
--> **Strike** (the free opening blow plus the poured extras, at Might per blow)
--> **Resolve** (the damage actually applies: Health flips at the Grit bar, the
-pile closes, and a body that empties is DOWNED - being downed is one thing
-resolve can do, not a step of its own). The log's line prefixes are the same
-four words - `target` / `bid` / `strike` / `resolve` - plus `move` for the
-movement steps.
+-> **Strike** (the free opening blow plus any **declared extra strikes**, at
+Might per blow, one tempo each) -> **Resolve** (the damage actually applies:
+Health flips at the Grit bar, the pile closes, and a body that empties is DOWNED
+- being downed is one thing resolve can do, not a step of its own). **The bid
+and the extra strikes are each explicitly declared**, one value per strike.
+(The card-table app renames the Bid step **Catch**, lets the player pick both
+values, and its log and UI use those words - App spec.)
 
 | #   | Step                 | Who -> whom     | What happens                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
 | --- | -------------------- | --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -126,24 +134,23 @@ reachable, never a different thing.
   melee step trades both ways because both declared. A body firing from
   **range** lands its shot but is **never answered**: you cannot strike back at
   something you never reached.
-- **Tempo is live across the whole round.** The mutual melee steps (1, 3, 7, 8)
-  pour the striker's whole remaining pool into its declared target; the volley
-  (5) and the raid (6) land the opening blow only. A body may act at every step
-  it can fund - and an all-in pour at an early step is exactly why it has
-  nothing left at a late one. One-strike-per-round is emergent for low-Cadence
-  bodies, never a rule.
-- **Contact bids auto-size; defense is the automatic greedy dodge.** The *whom*
-  is declared; the contest's *how hard* is computed (`reach_cards` - the fewest
-  cards the target cannot afford to slip, else the minimum). Reaching is never
-  a guaranteed hit.
-- **The scripted foe plays one greedy policy, and it never wastes a turn.** A
-  foe declares the max-disruption target (`foe_catch`) or crosses when the
-  one-ply read says to (`wants_to_cross`) - and it **passes rather than throw a
-  strike that would flip nothing**: a body whose Might cannot clear the target's
-  Grit keeps its tempo instead of squandering it, since sub-Grit damage is
-  discarded either way. A winnable verdict never rests on the enemy hitting what
-  it cannot hurt. (`foe_catch` returns `None` on a zero yield; enforced by
-  `foe_catch_passes_when_nothing_can_be_hurt`.)
+- **Tempo is live across the whole round.** At the mutual melee steps (1, 3, 7,
+  8) a striker may declare extra strikes up to its whole remaining pool against
+  its target; the volley (5) and the raid (6) land the opening blow only. A body
+  may act at every step it can fund - and spending its whole pool at an early
+  step is exactly why it has nothing left at a late one. One-strike-per-round is
+  emergent for low-Cadence bodies, never a rule.
+- **The bid and the extra strikes are declared; reaching is never a guaranteed
+  hit.** Every strike declares how hard to reach (the bid) and how many extra
+  strikes to spend. *How* a given actor chooses those, and how a defender dodges,
+  is not a rule - it is a policy (the app suggests an optimal bid and runs an
+  automatic dodge; scripted creatures pick deterministically - App spec). The
+  rules require only that each actor's choice be **deterministic**.
+- **Creatures are deterministic subsets.** A creature declares by a fixed policy -
+  reproducible, not necessarily clever - and may use only part of the decision
+  space (e.g. it need not split its pool or mind-game the bid). This app's
+  particular foe policy (max-disruption targeting, and passing rather than
+  throwing a strike that would flip nothing) lives in the App spec.
 - **Area strikes never target and never retaliate.** An area (aoe) body's
   strike is *always* the untargeted regional sweep - every enemy in the tier it
   is aimed at, unevadable, one tempo. Width, never depth: a body you could not
@@ -178,10 +185,11 @@ tractability) did not materialize; the diagonal gate
 
 What remains, deliberately deferred:
 
-- **Declared pour sizes** - strike extras beyond {0, pool} are behavior-card
-  territory (foes) and a decision-richness add (party).
-- **Declared defense** - the dodge is the automatic greedy; making it a
-  declared bid is a fold-out for playtesting to demand.
+- **Declared extra-strike sizes for foes** - a scripted foe still spends {0 or
+  all-in}; a mid-range strike count is behavior-card territory. The PARTY now
+  declares any strike count 0..pool in the card-table app (App spec).
+- **Declared defense** - the dodge is automatic; making it a declared bid is a
+  fold-out for playtesting to demand.
 
 ## History (how this model settled, 2026-07-20/21)
 
@@ -203,9 +211,9 @@ through three rings), then by dissolving that frame into the steps:
    rest of the pool STRANDED - an implementation artifact, not a property of the
    act-consuming design), and (c) catch targeting moved from everyone-catches to
    only-your-declared-target. The collapse condemns that bundle; the clean
-   comparison (act-consuming WITH the strike-phase pour) was never run. With the
-   pour in place, the two models differ only in **split-freedom**: whether one
-   body may divide its pool across two targets in the same round.
+   comparison (act-consuming WITH the strike-phase extras) was never run. With
+   the extra strikes in place, the two models differ only in **split-freedom**:
+   whether one body may divide its pool across two targets in the same round.
 3. **The catch wave** - a genuine second declaration per body, additive and
    tempo-priced. Landed clean; the solver searched it, foes played the catch
    instinct.
@@ -213,10 +221,10 @@ through three rings), then by dissolving that frame into the steps:
    finish resolver instinct: MEASURED and rejected (Raid corner X; the counter-
    knob broke Ashfen's clash-only guard - the Sniper cannot be both lethal
    enough to demand silencing and an executioner of the spent runner who comes
-   to silence it). Resolved by moving the pour to the DECLARATION (pour 0 or
-   the finishing pour): physics untouched, allocation is policy. Foes default
-   to mission-focus; an executioner is a future behavior-card trait. Diagonal
-   held 4/4 + 5/5 with the party's pours fully searchable.
+   to silence it). Resolved by moving the extra strikes to the DECLARATION ({0
+   or the finishing count}): physics untouched, allocation is policy. Foes
+   default to mission-focus; an executioner is a future behavior-card trait.
+   Diagonal held 4/4 + 5/5 with the party's strike counts fully searchable.
 5. **The step machine (2026-07-21)** - the eight-step schedule made literal:
    per-step declare/reveal with immediate resolution, so targeting reacts to
    same-round deaths (the collapsed front is advanced upon at step 8 of the

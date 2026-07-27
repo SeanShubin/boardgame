@@ -34,6 +34,13 @@ The documentation is split by **authority**:
   Advance) and the four-minor-step Interaction primitive (Target → Bid → Strike → Resolve), as
   implemented in `crates/rules/src/combat` and asserted by the diagonal balance gate. Documents
   the playable reference combat; it does not amend the aspirational `canon/2-spec`.
+- **[app-spec/combat.md](app-spec/combat.md) — the App spec's combat chapter.** How the deployed
+  **card-table app** realizes those combat rules: the player decision surface (the
+  Target → Catch → Strike beats and their defaults), the policies it runs (the suggested bid
+  `reach_cards`, the automatic opportunity-cost dodge, the scripted-foe behaviour, the doom oracle),
+  and the presentation (the Catch vocabulary, the minor-step track, the damage badges, the log). App
+  behaviour that **conforms to** the Spec, not game truth — the rules-vs-app split is explained in
+  [canon/0-source-of-truth.md](canon/0-source-of-truth.md).
 - **[computability-and-balance.md](computability-and-balance.md) — the determinism discipline.**
   Elaborates **Charter #11**: why the canonical mode (Clash off, decks open) is deterministic and
   single-agent so **par is computable**, the invariants future mechanics must not break (with a
