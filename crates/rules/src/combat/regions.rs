@@ -431,6 +431,12 @@ fn per_card(u: &Combatant) -> u32 {
     u.finesse.max(1) * bodies
 }
 
+/// The **reach** `catch` cards generate against the slip contest: `catch` x the per-card bid (Finesse, x body
+/// count for a horde). This is the number the target must out-dodge; a picker shows it per catch.
+pub fn catch_reach(u: &Combatant, catch: u32) -> u32 {
+    catch * per_card(u)
+}
+
 /// How many blows an attacker lands this step: the opening blow the reach paid for, plus - in a pouring step -
 /// one per leftover tempo card. A horde swings ONE volley and never pours (mirrors `poured`'s `!horde` guard),
 /// so its strike count stays 1 whatever the pour.

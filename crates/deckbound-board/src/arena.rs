@@ -23,7 +23,9 @@
 
 use cardtable_model::{Board, CardId, CardKind, Choice, PileId};
 use rules::combat::narrate;
-use rules::combat::regions::{Board as Battlefield, MAX_ROUNDS, Rank, reach_cards, strike_report};
+use rules::combat::regions::{
+    Board as Battlefield, MAX_ROUNDS, Rank, catch_reach, reach_cards, strike_report,
+};
 use rules::combat::resolve::{Combatant, Side};
 use rules::combat::step_game::{
     STEPS, Step, StepChoice, StepCombat, StepState, step_coord, step_policy, step_pours,
@@ -1119,10 +1121,19 @@ pub(crate) fn step_choices(board: &Board, arena: PileId) -> Vec<(Choice, ChoiceA
             let tempo = w.units[i].tempo;
             let can_pour = step_pours(w.step) && !w.units[i].aoe && !w.units[i].horde;
             for c in 1..=tempo {
-                // The opening blow's damage (raw, banked into the target's Grit pile) - or "slipped".
-                let consequence = match strike_report(&w.units, i, t, c, 0) {
-                    None => "slipped".to_string(),
-                    Some(r) => format!("{} dmg", r.damage),
+                // The reach this catch generates, then the RANGE of damage the Strike beat will let you deal
+                // with it: each pour you could still afford, minus any the target dodges. A weak catch lets the
+                // target slip your bigger pours (so the range shrinks); a stronger catch resists the slip (so
+                // the full pour lands) - the reach-vs-strikes trade the player is here to learn.
+                let reach = catch_reach(&w.units[i], c);
+                let hi_pour = if can_pour { tempo - c } else { 0 };
+                let landed: Vec<u32> = (0..=hi_pour)
+                    .filter_map(|p| strike_report(&w.units, i, t, c, p).map(|r| r.damage))
+                    .collect();
+                let consequence = match (landed.iter().min(), landed.iter().max()) {
+                    (Some(&lo), Some(&hi)) if lo == hi => format!("{reach} reach, {hi} damage"),
+                    (Some(&lo), Some(&hi)) => format!("{reach} reach, {lo}-{hi} damage"),
+                    _ => format!("{reach} reach, slipped"),
                 };
                 let action = if can_pour && tempo > c {
                     ChoiceAction::PickCatch(target, c)
@@ -2467,6 +2478,28 @@ mod tests {
             Some(Staged::Aim(w.cards[target], 1, tempo - 1)),
             "the max-pour tile staged catch 1 + pour (tempo-1)"
         );
+    }
+
+    /// A Catch tile reads its **reach** and the **range of damage** the Strike beat will then offer (each pour
+    /// that lands) - a stronger catch trades reach for fewer strikes, the lesson the beat teaches.
+    #[test]
+    fn catch_tiles_show_reach_and_damage_range() {
+        let mut board = sample_table();
+        let arena = open_a_fight_at(&mut board, &["Raider"], Some("The Sundered Vault"));
+        let w = wave(&board, arena).unwrap();
+        let i = (0..w.units.len()).find(|&i| w.asked[i]).unwrap();
+        handle_tap(&mut board, w.cards[i]); // select
+        choose(&mut board, 0); // Strike... -> aiming
+        let w = wave(&board, arena).unwrap();
+        let target = w.footprints[i][0];
+        handle_tap(&mut board, w.cards[target]); // -> the catch beat
+        let cons: Vec<String> = scene_choices(&board, arena)
+            .iter()
+            .map(|c| c.consequence.clone())
+            .collect();
+        // Raider M6 / Finesse 2, tempo 2, vs the Wall (melee - it answers, so it never slips). Catch 1: reach
+        // 2, pours 0..1 both land -> 6-12 damage. Catch 2: reach 4, only pour 0 -> 6 damage.
+        assert_eq!(cons, vec!["2 reach, 6-12 damage", "4 reach, 6 damage"]);
     }
 
     /// The WHAT beat is a **card**: an action tile's synthetic id reads back to the choice index it stands
