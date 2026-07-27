@@ -150,12 +150,12 @@ pub fn narrate(before: &Board, transcript: &[StepLog]) -> Vec<String> {
                         // line, and a bid that connected means the target did not dodge, so it has nothing to say
                         // here. (The general rule that the reacher wins ties is a rule, not an event.)
                         lines.push((
-                            "bid",
+                            "catch",
                             format!("{an}: flips {rt} tempo at {fclause} = {} reach", r.bid),
                         ));
-                        let pour = total.saturating_sub(rt);
-                        if pour > 0 {
-                            strike_prefix = format!("pours {pour} more tempo, ");
+                        let extra = total.saturating_sub(rt);
+                        if extra > 0 {
+                            strike_prefix = format!("+{extra} strikes, ");
                         }
                     }
                     // A sweep forms no reach contest (unevadable), so it has no bid line; its one-card cost
@@ -230,7 +230,7 @@ pub fn narrate(before: &Board, transcript: &[StepLog]) -> Vec<String> {
                     format!("Finesse {f}")
                 };
                 lines.push((
-                    "bid",
+                    "catch",
                     format!(
                         "{} reaches for {}: flips {cards} tempo at {fclause} to generate {} reach, dodged",
                         before.units[i].name,
@@ -258,12 +258,12 @@ pub fn narrate(before: &Board, transcript: &[StepLog]) -> Vec<String> {
                 let f = before.units[i].finesse.max(1);
                 let dodge = spent * f;
                 lines.push((
-                    "bid",
+                    "catch",
                     format!("{name}: flips {spent} tempo at Finesse {f} = {dodge} reach, dodges"),
                 ));
             } else {
                 lines.push((
-                    "bid",
+                    "catch",
                     format!("{name}: flips {spent} tempo, no reach connects"),
                 ));
             }
@@ -425,7 +425,7 @@ pub fn narrate(before: &Board, transcript: &[StepLog]) -> Vec<String> {
             out.push(format!("  step {k}/8: {name}"));
             let rank = |s: &str| match s {
                 "target" => 0,
-                "bid" => 1,
+                "catch" => 1,
                 "strike" => 2,
                 "resolve" => 3,
                 _ => 4, // move - dissolution and repositioning close the step

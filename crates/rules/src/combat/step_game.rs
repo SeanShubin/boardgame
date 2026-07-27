@@ -15,7 +15,8 @@
 //! - **Validity is resolver-enforced** ([`super::steps`]): a stale declaration drops, never mislands.
 
 use super::regions::{
-    Board, MAX_ROUNDS, Rank, StepLog, canonical, foe_catch, interchangeable, wants_to_cross,
+    Board, MAX_ROUNDS, Rank, StepLog, canonical, foe_catch, interchangeable, reach_cards,
+    wants_to_cross,
 };
 use super::resolve::{Combatant, Side, refresh_round};
 use super::steps::{
@@ -77,11 +78,37 @@ pub fn step_coord(s: Step) -> (u8, &'static str) {
     }
 }
 
+/// Does this step **pour** - a striker sinks its whole remaining pool into blows after the reach is paid (the
+/// clash rule of the mutual melee steps), versus landing the opening blow only (the volley/raid rule)? Mirrors
+/// the `pour` flags the resolvers in [`super::steps`] pass to `exchange`; shared so declare-time callers
+/// (`step_policy`, the arena's bid menu) size the auto-bid exactly as resolution will.
+pub fn step_pours(s: Step) -> bool {
+    matches!(
+        s,
+        Step::Havoc | Step::Skirmish | Step::Assault | Step::Advance
+    )
+}
+
+/// The current-behavior pour for an attacker that just paid `catch` for its reach: a non-horde, non-area body
+/// in a pouring step spills ALL its remaining tempo into extra blows; everything else pours nothing (a horde
+/// swings one volley, an area strike forms no contact, the volley/raid steps land the opening blow only). This
+/// is the default the declaration layer attaches so the solver and scripted play resolve exactly as they did
+/// before the pour became a player choice.
+pub fn pour_default(u: &Combatant, catch: u32, pours: bool) -> u32 {
+    if pours && !u.aoe && !u.horde {
+        u.tempo.saturating_sub(catch)
+    } else {
+        0
+    }
+}
+
 /// One body's declaration at the current step.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub enum StepChoice {
-    /// A strike step: strike `Some(target)`, or pass.
-    Strike(Option<usize>),
+    /// A strike step: strike `Some((target, catch, pour))` - `catch` tempo cards buy the reach past the slip,
+    /// `pour` more cards become extra blows (0 = the opening blow only), the rest is held back - or pass. The
+    /// commitment is coupled to the target so an aim without one is unrepresentable.
+    Strike(Option<(usize, u32, u32)>),
     /// A movement step (withdraw / cross): go, or stay.
     Move(bool),
 }
@@ -396,12 +423,12 @@ impl StepState {
     /// Resolve the current step from its collected declarations. When recording, the step's [`StepLog`] is
     /// kept for the driver ([`take_transcript`](StepState::take_transcript)).
     fn resolve_phase(&mut self) {
-        let strikes: Vec<(usize, usize)> = self
+        let strikes: Vec<(usize, usize, u32, u32)> = self
             .decls
             .iter()
             .enumerate()
             .filter_map(|(i, d)| match d {
-                Some(StepChoice::Strike(Some(t))) => Some((i, *t)),
+                Some(StepChoice::Strike(Some((t, c, p)))) => Some((i, *t, *c, *p)),
                 _ => None,
             })
             .collect();
@@ -453,6 +480,15 @@ impl StepState {
 pub fn step_policy(state: &StepState, i: usize) -> StepChoice {
     let b = state.board();
     let candidates = state.targets(i);
+    // A scripted attacker auto-sizes the optimal reach and the current-behavior pour (all remaining); the
+    // coupled (target, catch, pour) keeps foe and party declarations one shape.
+    let pours = step_pours(state.step());
+    let aim = |t: Option<usize>| {
+        StepChoice::Strike(t.map(|t| {
+            let catch = reach_cards(&b.units, i, t, pours);
+            (t, catch, pour_default(&b.units[i], catch, pours))
+        }))
+    };
     match state.step() {
         Step::Withdraw => StepChoice::Move(false), // instinct is havoc: stay in
         Step::Cross => {
@@ -467,11 +503,11 @@ pub fn step_policy(state: &StepState, i: usize) -> StepChoice {
             if wants_to_cross(b, i) {
                 StepChoice::Strike(None)
             } else {
-                StepChoice::Strike(foe_catch(b, i, &candidates))
+                aim(foe_catch(b, i, &candidates))
             }
         }
         // Every other strike step: answer with the max-disruption pick, or pass when there is nobody.
-        _ => StepChoice::Strike(foe_catch(b, i, &candidates)),
+        _ => aim(foe_catch(b, i, &candidates)),
     }
 }
 
@@ -495,10 +531,19 @@ impl Game for StepCombat {
                 vec![StepChoice::Move(true), StepChoice::Move(false)]
             }
             _ => {
+                // The solver always attaches the OPTIMAL catch AND the current-behavior pour per target, so its
+                // branching stays one option per target and every resolved outcome is byte-identical to before
+                // the pour became a choice; the player's catch/pour variants are enumerated in the arena UI and
+                // scored on top of this base.
+                let pours = step_pours(state.step);
                 let mut out: Vec<StepChoice> = state
                     .targets(i)
                     .into_iter()
-                    .map(|t| StepChoice::Strike(Some(t)))
+                    .map(|t| {
+                        let catch = reach_cards(&state.board.units, i, t, pours);
+                        let pour = pour_default(&state.board.units[i], catch, pours);
+                        StepChoice::Strike(Some((t, catch, pour)))
+                    })
                     .collect();
                 out.push(StepChoice::Strike(None)); // holding the swing is always legal
                 out
@@ -808,7 +853,7 @@ mod tests {
         // Round 1, step Early: the Raider strikes the Wall.
         assert_eq!(s.step(), Step::Skirmish);
         assert_eq!(s.deciding(), Some(0));
-        s = StepCombat::apply(&s, &StepChoice::Strike(Some(1)));
+        s = StepCombat::apply(&s, &StepChoice::Strike(Some((1, 1, 0))));
         // The wave rolls through the foes and the step resolves; the Raider - committed to the line - is never
         // eligible at Cross, so by the time the party would decide again the step is past it.
         while s.deciding() == Some(0) && s.step() == Step::Cross {
@@ -828,7 +873,7 @@ mod tests {
             unit("Sniper", Side::Foe, [5, 6, 1, 2, 3], false, true),
         ]);
         assert_eq!(s.step(), Step::Skirmish);
-        s = StepCombat::apply(&s, &StepChoice::Strike(Some(1))); // the wall dies at step 3
+        s = StepCombat::apply(&s, &StepChoice::Strike(Some((1, 1, 0)))); // the wall dies at step 3
         // Walk the waves forward to the party's next decision.
         while let Some(i) = s.deciding() {
             if s.board().units[i].side == Side::Party {

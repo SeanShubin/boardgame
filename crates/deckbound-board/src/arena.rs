@@ -17,16 +17,16 @@
 //!   position as pile moves, the round's `struck`/`arrived` commitments as marker lines. Between waves there
 //!   is nothing off-table to lose - the grit pile closes at each step, so no scratch state survives a wave.
 //! - **The journal is the record**, in the canonical log format (`round N` / `  step K/8: Name` / the
-//!   `target`/`bid`/`strike`/`resolve` minor steps), told by the SHARED formatter
+//!   `target`/`catch`/`strike`/`resolve` minor steps), told by the SHARED formatter
 //!   ([`rules::combat::narrate`]) from the engine's recorded transcripts - the fight simulator's log and
 //!   this journal cannot tell the story differently.
 
 use cardtable_model::{Board, CardId, CardKind, Choice, PileId};
 use rules::combat::narrate;
-use rules::combat::regions::{Board as Battlefield, MAX_ROUNDS, Rank};
+use rules::combat::regions::{Board as Battlefield, MAX_ROUNDS, Rank, reach_cards, strike_report};
 use rules::combat::resolve::{Combatant, Side};
 use rules::combat::step_game::{
-    STEPS, Step, StepChoice, StepCombat, StepState, step_coord, step_policy,
+    STEPS, Step, StepChoice, StepCombat, StepState, step_coord, step_policy, step_pours,
 };
 use rules::core::{Game, Outcome as FightOutcome, Solver, Verdict};
 
@@ -176,21 +176,26 @@ fn num_after(line: &str, prefix: &str) -> u32 {
 /// the information boundary). `Aim`/`Hold` at a strike step; `Go`/`Stay` at a movement step.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Staged {
-    Aim(CardId),
+    /// Strike a target with a chosen commitment: `catch` tempo cards for the reach, `pour` more as extra
+    /// blows. Both are part of the order, so an aim is not complete until they are chosen.
+    Aim(CardId, u32, u32),
     Hold,
     Go,
     Stay,
 }
 
-/// A body's marker lines, decoded: the round's commitments, the selection marks, and the staged order.
-/// `aiming` is the mid-gesture state - the body chose a targeted action (the WHAT) and is waiting on the
-/// target (the WHOM); it is not yet an answer, and Commit still counts it as owed.
+/// A body's marker lines, decoded: the round's commitments, the selection marks, and the staged order. The
+/// gesture beats after the WHAT are: `aiming` (waiting on the WHOM), then `bidding` (target chosen, waiting on
+/// the catch), then `striking` (target+catch chosen, waiting on the pour). None is an answer; Commit counts
+/// each as owed.
 #[derive(Clone, Copy, Default)]
 struct Flags {
     struck: bool,
     arrived: bool,
     active: bool,
     aiming: bool,
+    bidding: Option<CardId>,
+    striking: Option<(CardId, u32)>,
     staged: Option<Staged>,
 }
 
@@ -206,8 +211,27 @@ fn read_flags(d: &[String]) -> Flags {
             "go" => f.staged = Some(Staged::Go),
             "stay" => f.staged = Some(Staged::Stay),
             l => {
-                if let Some(id) = l.strip_prefix("aim ") {
-                    f.staged = id.trim().parse().ok().map(|n| Staged::Aim(CardId(n)));
+                if let Some(rest) = l.strip_prefix("aim ") {
+                    // "aim <target-cardid> <catch> <pour>"
+                    let mut it = rest.split_whitespace();
+                    if let (Some(id), Some(catch), Some(pour)) = (
+                        it.next().and_then(|s| s.parse().ok()),
+                        it.next().and_then(|s| s.parse().ok()),
+                        it.next().and_then(|s| s.parse().ok()),
+                    ) {
+                        f.staged = Some(Staged::Aim(CardId(id), catch, pour));
+                    }
+                } else if let Some(id) = l.strip_prefix("bidding ") {
+                    f.bidding = id.trim().parse().ok().map(CardId);
+                } else if let Some(rest) = l.strip_prefix("striking ") {
+                    // "striking <target-cardid> <catch>"
+                    let mut it = rest.split_whitespace();
+                    if let (Some(id), Some(catch)) = (
+                        it.next().and_then(|s| s.parse().ok()),
+                        it.next().and_then(|s| s.parse().ok()),
+                    ) {
+                        f.striking = Some((CardId(id), catch));
+                    }
                 }
             }
         }
@@ -235,8 +259,14 @@ fn write_flags(board: &mut Board, card: CardId, f: Flags) {
     if f.aiming {
         lines.push("aiming".into());
     }
+    if let Some(t) = f.bidding {
+        lines.push(format!("bidding {}", t.0));
+    }
+    if let Some((t, catch)) = f.striking {
+        lines.push(format!("striking {} {}", t.0, catch));
+    }
     match f.staged {
-        Some(Staged::Aim(t)) => lines.push(format!("aim {}", t.0)),
+        Some(Staged::Aim(t, catch, pour)) => lines.push(format!("aim {} {} {}", t.0, catch, pour)),
         Some(Staged::Hold) => lines.push("hold".into()),
         Some(Staged::Go) => lines.push("go".into()),
         Some(Staged::Stay) => lines.push("stay".into()),
@@ -271,6 +301,21 @@ fn aiming_of(board: &Board, card: CardId) -> bool {
         .card(card)
         .map(|c| read_flags(c.detail()).aiming)
         .unwrap_or(false)
+}
+
+/// The target a body has chosen and is now bidding on (the beat between aiming and choosing the catch).
+fn bidding_of(board: &Board, card: CardId) -> Option<CardId> {
+    board
+        .card(card)
+        .and_then(|c| read_flags(c.detail()).bidding)
+}
+
+/// The (target, catch) a body has settled and is now choosing the pour for (the beat between the catch and a
+/// staged `Aim`).
+fn striking_of(board: &Board, card: CardId) -> Option<(CardId, u32)> {
+    board
+        .card(card)
+        .and_then(|c| read_flags(c.detail()).striking)
 }
 
 /// Read one combatant card into a rules [`Combatant`] - constant stats from the source, mutable state from
@@ -879,6 +924,12 @@ pub(crate) struct Wave {
     /// Whether the focused body is mid-gesture: it chose a targeted action (the WHAT) and is waiting on the
     /// WHOM. While true, its legal targets carry the animated invitation cue.
     pub(crate) aiming: bool,
+    /// The focused body's chosen target (index into `cards`) while it is on the CATCH beat - target picked,
+    /// catch still owed. `Some` only for a non-area striker between the WHOM tap and picking a catch.
+    pub(crate) bidding: Option<usize>,
+    /// The focused body's (target index, catch) while it is on the STRIKE beat - target+catch picked, pour
+    /// still owed.
+    pub(crate) striking: Option<(usize, u32)>,
     /// The focused body's strike CHOICES (empty on movement steps): every reachable enemy for a single
     /// striker, one representative per slice for an area striker - one action card each.
     pub(crate) targets: Vec<usize>,
@@ -919,6 +970,15 @@ pub(crate) fn wave(board: &Board, arena: PileId) -> Option<Wave> {
         })
         .collect();
     let aiming = focus.is_some_and(|i| aiming_of(board, cards[i]));
+    // The catch beat: the focus has a chosen target awaiting its catch. Resolve the stored target CardId to
+    // its index; a stale target (no longer present) drops the state.
+    let bidding = focus
+        .and_then(|i| bidding_of(board, cards[i]))
+        .and_then(|t| cards.iter().position(|&c| c == t));
+    // The strike beat: target+catch settled, awaiting the pour.
+    let striking = focus
+        .and_then(|i| striking_of(board, cards[i]))
+        .and_then(|(t, catch)| cards.iter().position(|&c| c == t).map(|ti| (ti, catch)));
     Some(Wave {
         cards,
         units,
@@ -929,6 +989,8 @@ pub(crate) fn wave(board: &Board, arena: PileId) -> Option<Wave> {
         staged,
         focus,
         aiming,
+        bidding,
+        striking,
         targets,
         footprints,
     })
@@ -940,7 +1002,11 @@ pub(crate) fn wave(board: &Board, arena: PileId) -> Option<Wave> {
 pub fn pending_decision(board: &Board, arena: PileId) -> Option<String> {
     let w = wave(board, arena)?;
     let i = (0..w.units.len()).find(|&i| w.asked[i] && w.staged[i].is_none())?;
-    Some(if w.focus == Some(i) && w.aiming {
+    Some(if w.focus == Some(i) && w.striking.is_some() {
+        format!("{} is choosing how hard to strike", w.units[i].name)
+    } else if w.focus == Some(i) && w.bidding.is_some() {
+        format!("{} is choosing how hard to catch", w.units[i].name)
+    } else if w.focus == Some(i) && w.aiming {
         format!("{} is targeting", w.units[i].name)
     } else {
         format!("{} has no orders", w.units[i].name)
@@ -966,11 +1032,14 @@ pub fn commit_label(board: &Board, arena: PileId) -> String {
 /// What taking a choice card does to the focused body's order-in-progress.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum ChoiceAction {
-    /// Complete an order (a hold, or a movement answer). Aiming completes by tapping a lit enemy, not a card.
+    /// Complete an order (a hold, a movement answer, or a full `Aim`). Aiming completes by tapping a lit
+    /// enemy, not a card.
     Stage(Staged),
     /// Choose the targeted action (the WHAT) - enter targeting; a tap on a lit enemy completes it, and a tap
     /// on the commanding body drops the gesture (there is no Cancel card).
     BeginAim,
+    /// Settle the catch (target, catch) and advance to the STRIKE beat, where the pour is chosen.
+    PickCatch(CardId, u32),
 }
 
 /// The synthetic [`CardId`] base for **action tiles**. Real card ids are a small monotonic counter, so a
@@ -1040,6 +1109,55 @@ pub(crate) fn step_choices(board: &Board, arena: PileId) -> Vec<(Choice, ChoiceA
                 ChoiceAction::Stage(Staged::Stay),
             ));
         }
+        _ if w.bidding.is_some() => {
+            // The CATCH beat: the target is chosen, now pick how many tempo cards buy the reach (1..=tempo).
+            // Each shows the opening blow it lands (or "slipped"); the oracle stamps its own winnable/doomed.
+            // Picking a catch opens the STRIKE beat when there is spare tempo to pour, else stages complete.
+            // There is no zero tile - a catch of nothing is spelled Hold. Back out by re-tapping the body.
+            let t = w.bidding.expect("catch arm");
+            let target = w.cards[t];
+            let tempo = w.units[i].tempo;
+            let can_pour = step_pours(w.step) && !w.units[i].aoe && !w.units[i].horde;
+            for c in 1..=tempo {
+                // The opening blow's damage (raw, banked into the target's Grit pile) - or "slipped".
+                let consequence = match strike_report(&w.units, i, t, c, 0) {
+                    None => "slipped".to_string(),
+                    Some(r) => format!("{} dmg", r.damage),
+                };
+                let action = if can_pour && tempo > c {
+                    ChoiceAction::PickCatch(target, c)
+                } else {
+                    ChoiceAction::Stage(Staged::Aim(target, c, 0))
+                };
+                out.push((Choice::new(format!("Catch {c}"), consequence), action));
+            }
+        }
+        _ if w.striking.is_some() => {
+            // The STRIKE beat: target and catch settled, pick how many MORE tempo cards to pour into extra
+            // blows - 0 (the opening blow only) up to all remaining. Each shows the total it lands; a bigger
+            // pour lands more when the target stands, but the extra harm can tip a sensible target into
+            // dodging the whole strike, read here as "slipped".
+            let (t, catch) = w.striking.expect("strike arm");
+            let target = w.cards[t];
+            let tempo = w.units[i].tempo;
+            for p in 0..=tempo.saturating_sub(catch) {
+                // The total damage this pour banks (blows x Might), against the target's Grit - or "slipped".
+                let consequence = match strike_report(&w.units, i, t, catch, p) {
+                    None => "slipped".to_string(),
+                    Some(r) => format!("{} dmg", r.damage),
+                };
+                let label = if p == 0 {
+                    "Strike (opening blow)".to_string()
+                } else {
+                    format!("Strike +{p}")
+                };
+                out.push((
+                    Choice::new(label, consequence)
+                        .chosen(w.staged[i] == Some(Staged::Aim(target, catch, p))),
+                    ChoiceAction::Stage(Staged::Aim(target, catch, p)),
+                ));
+            }
+        }
         _ if w.aiming => {
             // The WHOM has NO cards: the lit enemies on the board ARE the menu - each carries its own
             // winnable/doomed and completes the strike when tapped. To back out, tap the commanding body
@@ -1053,7 +1171,7 @@ pub(crate) fn step_choices(board: &Board, arena: PileId) -> Vec<(Choice, ChoiceA
             let n = w.targets.len();
             out.push((
                 Choice::new("Strike...", format!("{n} in reach"))
-                    .chosen(matches!(w.staged[i], Some(Staged::Aim(_)))),
+                    .chosen(matches!(w.staged[i], Some(Staged::Aim(..)))),
                 ChoiceAction::BeginAim,
             ));
             out.push((
@@ -1094,11 +1212,20 @@ pub fn choose(board: &mut Board, index: usize) {
         ChoiceAction::Stage(s) => edit_flags(board, card, |f| {
             f.staged = Some(*s);
             f.aiming = false;
+            f.bidding = None;
+            f.striking = None;
             f.active = false;
         }),
         ChoiceAction::BeginAim => edit_flags(board, card, |f| {
             f.staged = None;
             f.aiming = true;
+            f.bidding = None;
+            f.striking = None;
+        }),
+        ChoiceAction::PickCatch(target, catch) => edit_flags(board, card, |f| {
+            // The catch is settled; advance to the STRIKE beat to choose the pour.
+            f.bidding = None;
+            f.striking = Some((*target, *catch));
         }),
     }
 }
@@ -1124,18 +1251,22 @@ pub fn handle_tap(board: &mut Board, card: CardId) {
             // Re-ask: clear the staged order, and make it the focus.
             edit_flags(board, card, |f| {
                 f.staged = None;
+                f.bidding = None;
+                f.striking = None;
                 f.active = true;
             });
         } else if w.focus == Some(i) {
-            // Tapping the selected hero again puts it back - deselected, gesture dropped.
+            // Tapping the selected hero again puts it back - deselected, gesture (aim/catch/pour) dropped.
             edit_flags(board, card, |f| {
                 f.active = false;
                 f.aiming = false;
+                f.bidding = None;
+                f.striking = None;
             });
         } else {
-            // Select: move the active mark here, and clear any aiming everywhere - switching bodies mid-aim
-            // must not strand the abandoned one in a half-aiming state (it would re-enter targeting the next
-            // time it was selected). The freshly selected body starts at the WHAT beat, not aiming.
+            // Select: move the active mark here, and clear any in-progress gesture everywhere - switching
+            // bodies mid-gesture must not strand the abandoned one in a half-aimed/half-caught state (it would
+            // re-enter that beat the next time it was selected). The freshly selected body starts at the WHAT.
             for (j, &c) in w.cards.iter().enumerate() {
                 if w.units[j].side != Side::Party {
                     continue;
@@ -1143,6 +1274,8 @@ pub fn handle_tap(board: &mut Board, card: CardId) {
                 edit_flags(board, c, |f| {
                     f.active = j == i;
                     f.aiming = false;
+                    f.bidding = None;
+                    f.striking = None;
                 });
             }
         }
@@ -1156,11 +1289,22 @@ pub fn handle_tap(board: &mut Board, card: CardId) {
         && w.footprints[f].contains(&i)
     {
         let target = w.cards[i];
-        edit_flags(board, w.cards[f], |flags| {
-            flags.staged = Some(Staged::Aim(target));
-            flags.aiming = false;
-            flags.active = false;
-        });
+        if w.units[f].aoe {
+            // An area strike is unevadable, forms no contact and never pours - it commits a single card, so
+            // there is no catch or pour to choose: stage it complete (catch 1, pour 0).
+            edit_flags(board, w.cards[f], |flags| {
+                flags.staged = Some(Staged::Aim(target, 1, 0));
+                flags.aiming = false;
+                flags.active = false;
+            });
+        } else {
+            // A single strike now owes a BID: advance to the bid beat (target chosen, bid pending). The bid
+            // tiles become the menu; nothing is staged until one is picked.
+            edit_flags(board, w.cards[f], |flags| {
+                flags.aiming = false;
+                flags.bidding = Some(target);
+            });
+        }
     }
 }
 
@@ -1265,7 +1409,12 @@ fn run_engine(board: &mut Board, arena: PileId, use_staged: bool) {
         } else if use_staged && !consumed[i] && staged[i].is_some() {
             consumed[i] = true;
             match staged[i] {
-                Some(Staged::Aim(t)) => StepChoice::Strike(cards.iter().position(|&c| c == t)),
+                Some(Staged::Aim(t, catch, pour)) => StepChoice::Strike(
+                    cards
+                        .iter()
+                        .position(|&c| c == t)
+                        .map(|ti| (ti, catch, pour)),
+                ),
                 Some(Staged::Hold) => StepChoice::Strike(None),
                 Some(Staged::Go) => StepChoice::Move(true),
                 Some(Staged::Stay) => StepChoice::Move(false),
@@ -1372,7 +1521,12 @@ fn outlook_base(board: &Board, arena: PileId) -> Option<(StepState, Wave, usize)
             return None; // a staged body dropped out of eligibility mid-wave; bail rather than mislead
         }
         let c = match w.staged[i] {
-            Some(Staged::Aim(t)) => StepChoice::Strike(w.cards.iter().position(|&c| c == t)),
+            Some(Staged::Aim(t, catch, pour)) => StepChoice::Strike(
+                w.cards
+                    .iter()
+                    .position(|&c| c == t)
+                    .map(|ti| (ti, catch, pour)),
+            ),
             Some(Staged::Hold) => StepChoice::Strike(None),
             Some(Staged::Go) => StepChoice::Move(true),
             Some(Staged::Stay) => StepChoice::Move(false),
@@ -1403,10 +1557,46 @@ fn score_candidate(
     }
 }
 
+/// The best outlook of striking `target` over every bid the attacker could commit (`1..=tempo`), short-circuit
+/// on the first `Winnable`. An area strike has no bid (one card, unevadable), so it scores a single candidate.
+/// This is what a lit enemy tile carries while aiming: "if I pick this target, does ANY bid keep a win alive?"
+fn best_over_bids(
+    base: &StepState,
+    solver: &mut Solver<StepCombat>,
+    left: &mut u64,
+    target: usize,
+    tempo: u32,
+    aoe: bool,
+    pours: bool,
+) -> cardtable_model::Outlook {
+    use cardtable_model::Outlook;
+    let hi = if aoe { 1 } else { tempo.max(1) };
+    let mut best = Outlook::Doomed;
+    for c in 1..=hi {
+        // Each catch at its current-behavior pour (all-in) - the same commitment the solver branches on.
+        let pour = if pours && !aoe {
+            tempo.saturating_sub(c)
+        } else {
+            0
+        };
+        let o = score_candidate(
+            base,
+            solver,
+            left,
+            &StepChoice::Strike(Some((target, c, pour))),
+        );
+        best = best_outlook(best, o);
+        if best == Outlook::Winnable {
+            break;
+        }
+    }
+    best
+}
+
 /// While AIMING, the `Winnable`/`Doomed` of striking each **lit enemy**, keyed by its card - so the foe tiles
-/// carry their own outlook now that the per-target cards are gone. One score per footprint body; for an area
-/// strike the memo makes the redundancy (many bodies, one slice, one outcome) nearly free. Empty when not
-/// aiming, or when the fight is not in a scorable state.
+/// carry their own outlook now that the per-target cards are gone. Each tile scores the BEST bid over the
+/// attacker's tempo (picking the target still leaves the bid to choose). Empty when not aiming, or when the
+/// fight is not in a scorable state.
 pub fn aim_outlook_by_foe(
     board: &Board,
     arena: PileId,
@@ -1419,12 +1609,15 @@ pub fn aim_outlook_by_foe(
     if !w.aiming {
         return Vec::new();
     }
+    let tempo = w.units[focus].tempo;
+    let aoe = w.units[focus].aoe;
+    let pours = step_pours(w.step);
     let mut left = budget;
     w.footprints[focus]
         .clone()
         .into_iter()
         .map(|m| {
-            let o = score_candidate(&base, solver, &mut left, &StepChoice::Strike(Some(m)));
+            let o = best_over_bids(&base, solver, &mut left, m, tempo, aoe, pours);
             (w.cards[m], o)
         })
         .collect()
@@ -1446,7 +1639,7 @@ pub fn choice_outlooks(
     if choices.is_empty() {
         return Vec::new();
     }
-    let Some((base, w, _focus)) = outlook_base(board, arena) else {
+    let Some((base, w, focus)) = outlook_base(board, arena) else {
         return vec![Outlook::Unknown; choices.len()];
     };
 
@@ -1467,20 +1660,52 @@ pub fn choice_outlooks(
     let mut out = Vec::with_capacity(choices.len());
     for (_, action) in &choices {
         let outlook = match action {
-            ChoiceAction::Stage(Staged::Aim(t)) => score(
+            // A Strike tile: score exactly that (target, catch, pour). This is where a suboptimal commitment
+            // earns its honest verdict.
+            ChoiceAction::Stage(Staged::Aim(t, catch, pour)) => score(
                 solver,
-                &StepChoice::Strike(w.cards.iter().position(|&c| c == *t)),
+                &StepChoice::Strike(
+                    w.cards
+                        .iter()
+                        .position(|&x| x == *t)
+                        .map(|ti| (ti, *catch, *pour)),
+                ),
             ),
             ChoiceAction::Stage(Staged::Hold) => score(solver, &StepChoice::Strike(None)),
             ChoiceAction::Stage(Staged::Go) => score(solver, &StepChoice::Move(true)),
             ChoiceAction::Stage(Staged::Stay) => score(solver, &StepChoice::Move(false)),
-            // The verb button leads to a target choice - so its outlook is the BEST of the completions it
-            // opens (winnable if ANY target keeps a win alive). Otherwise it would sit blank beside a Hold
-            // that carries a verdict, reading as if only Hold were endorsed.
+            // A Catch tile leads to the Strike beat - its outlook is the BEST pour for that catch (winnable if
+            // any pour keeps a win alive).
+            ChoiceAction::PickCatch(t, catch) => match w.cards.iter().position(|&x| x == *t) {
+                None => Outlook::Unknown,
+                Some(ti) => {
+                    let mut best = Outlook::Doomed;
+                    for pour in 0..=w.units[focus].tempo.saturating_sub(*catch) {
+                        let o = score(solver, &StepChoice::Strike(Some((ti, *catch, pour))));
+                        best = best_outlook(best, o);
+                        if best == Outlook::Winnable {
+                            break;
+                        }
+                    }
+                    best
+                }
+            },
+            // The verb button leads to a target then a catch then a pour - so its outlook is the BEST of the
+            // completions it opens (winnable if ANY target keeps a win alive), each at its optimal catch and
+            // the current-behavior pour, matching the solver's own branching. Otherwise it would sit blank
+            // beside a Hold that carries a verdict, reading as if only Hold were endorsed.
             ChoiceAction::BeginAim => {
+                let pours = step_pours(w.step);
+                let aoe = w.units[focus].aoe;
                 let mut best = Outlook::Doomed;
                 for &t in &w.targets {
-                    let o = score(solver, &StepChoice::Strike(Some(t)));
+                    let catch = reach_cards(&w.units, focus, t, pours);
+                    let pour = if pours && !aoe {
+                        w.units[focus].tempo.saturating_sub(catch)
+                    } else {
+                        0
+                    };
+                    let o = score(solver, &StepChoice::Strike(Some((t, catch, pour))));
                     best = best_outlook(best, o);
                     if best == Outlook::Winnable {
                         break; // a winnable completion is the best possible - no need to grind the rest
@@ -1571,8 +1796,12 @@ fn teardown(board: &mut Board, arena: PileId, spend_day: bool) {
         }
     }
 
-    let root = board.root_id();
-    let _ = board.focus(root);
+    // Return to the screen the fight was entered from - the place - falling back to the root felt only
+    // if that place no longer exists.
+    let return_to = place
+        .filter(|p| board.pile(*p).is_some())
+        .unwrap_or_else(|| board.root_id());
+    let _ = board.focus(return_to);
     let _ = board.remove_pile(arena);
     if spend_day
         && let (Some(p), Some(e)) = (top_deck(board, "Progress"), top_deck(board, "Events"))
@@ -1700,6 +1929,7 @@ fn clear_wave_mark(board: &mut Board, arena: PileId) {
 mod tests {
     use super::*;
     use crate::fixtures::sample_table;
+    use rules::combat::step_game::pour_default;
     use rules::core::Outcome as EngineOutcome;
 
     /// Move each kit's map position from the home cell to `place_name` (or the first encounter place) and
@@ -1741,7 +1971,7 @@ mod tests {
     /// Convert an engine choice into the staged order that produces it.
     fn as_staged(cards: &[CardId], c: &StepChoice) -> Staged {
         match c {
-            StepChoice::Strike(Some(t)) => Staged::Aim(cards[*t]),
+            StepChoice::Strike(Some((t, catch, pour))) => Staged::Aim(cards[*t], *catch, *pour),
             StepChoice::Strike(None) => Staged::Hold,
             StepChoice::Move(true) => Staged::Go,
             StepChoice::Move(false) => Staged::Stay,
@@ -1772,9 +2002,12 @@ mod tests {
                     step_policy(&st, j)
                 } else {
                     match w.staged[j] {
-                        Some(Staged::Aim(t)) => {
-                            StepChoice::Strike(w.cards.iter().position(|&c| c == t))
-                        }
+                        Some(Staged::Aim(t, catch, pour)) => StepChoice::Strike(
+                            w.cards
+                                .iter()
+                                .position(|&c| c == t)
+                                .map(|ti| (ti, catch, pour)),
+                        ),
                         Some(Staged::Hold) => StepChoice::Strike(None),
                         Some(Staged::Go) => StepChoice::Move(true),
                         Some(Staged::Stay) => StepChoice::Move(false),
@@ -2004,11 +2237,12 @@ mod tests {
         assert!(find_arena(&board).is_some(), "a second fight stands up");
     }
 
-    /// **The three-beat gesture: WHO -> WHAT -> WHOM.** The verb button enters targeting (the mid-gesture
-    /// state - Commit still counts the body as owed, phrased as targeting); while aiming, the legal
-    /// targets invite completion and a tap on one stages the order; Cancel puts the action back.
+    /// **The five-beat gesture: WHO -> WHAT -> WHOM -> CATCH -> STRIKE.** The verb button enters targeting; a
+    /// tap on a lit enemy picks the WHOM and advances to the catch beat; a catch tile settles the reach and
+    /// (in a pouring step with spare tempo) advances to the strike beat; a strike tile picks the pour and
+    /// stages the complete order. Each beat leaves Commit owed; Cancel puts the action back.
     #[test]
-    fn the_three_beat_gesture() {
+    fn the_five_beat_gesture() {
         let mut board = sample_table();
         let arena = open_a_fight_at(&mut board, &["Raider"], Some("The Sundered Vault"));
 
@@ -2059,19 +2293,180 @@ mod tests {
             "tapping the source backs all the way out"
         );
 
-        // Re-select, re-enter targeting, and complete the gesture by tapping a lit enemy.
+        // Re-select, re-enter targeting, and pick the WHOM by tapping a lit enemy.
         handle_tap(&mut board, w.cards[i]);
         choose(&mut board, 0);
         let w = wave(&board, arena).unwrap();
         let target = w.footprints[i][0];
         handle_tap(&mut board, w.cards[target]);
         let w = wave(&board, arena).unwrap();
+
+        // Beat 4 - the CATCH: the target is chosen but nothing is staged yet; the menu is now catch tiles, and
+        // Commit still counts the body as owed (choosing a catch).
+        assert_eq!(
+            w.bidding,
+            Some(target),
+            "the tap advanced to the catch beat"
+        );
+        assert!(
+            w.staged[i].is_none(),
+            "no order staged until a catch is picked"
+        );
+        assert!(
+            pending_decision(&board, arena).is_some_and(|m| m.contains("catch")),
+            "an aimed-but-uncaught strike is still owed - it never commits by itself"
+        );
+        let catch_labels: Vec<String> = scene_choices(&board, arena)
+            .iter()
+            .map(|c| c.label.clone())
+            .collect();
+        assert!(
+            !catch_labels.is_empty() && catch_labels.iter().all(|l| l.starts_with("Catch ")),
+            "the catch tiles are the menu now: {catch_labels:?}"
+        );
+
+        // Pick the first catch tile (Catch 1). This is a pouring step with spare tempo, so it opens the
+        // STRIKE beat rather than staging.
+        choose(&mut board, 0);
+        let w = wave(&board, arena).unwrap();
+        assert_eq!(
+            w.striking,
+            Some((target, 1)),
+            "the catch advanced to the strike beat"
+        );
+        assert!(
+            w.staged[i].is_none(),
+            "still nothing staged - the pour is owed"
+        );
+        assert!(
+            pending_decision(&board, arena).is_some_and(|m| m.contains("strike")),
+            "an aimed-and-caught strike still owes its pour"
+        );
+        let strike_labels: Vec<String> = scene_choices(&board, arena)
+            .iter()
+            .map(|c| c.label.clone())
+            .collect();
+        assert!(
+            strike_labels.iter().all(|l| l.starts_with("Strike")),
+            "the strike tiles are the menu now: {strike_labels:?}"
+        );
+
+        // Beat 5 - the STRIKE: pick the first pour tile (pour 0, opening blow only) - that stages the order.
+        choose(&mut board, 0);
+        let w = wave(&board, arena).unwrap();
         assert_eq!(
             w.staged[i],
-            Some(Staged::Aim(w.cards[target])),
-            "the tap completed the order"
+            Some(Staged::Aim(w.cards[target], 1, 0)),
+            "the strike tile completed the order at catch 1, pour 0"
         );
-        assert!(!w.aiming, "the gesture is done");
+        assert!(
+            !w.aiming && w.bidding.is_none() && w.striking.is_none(),
+            "the gesture is done"
+        );
+    }
+
+    /// **An area strike has no catch or strike beat.** An AOE striker forms no contact, cannot be evaded and
+    /// never pours (it commits a single card), so tapping a lit enemy stages the complete `Aim(target, 1, 0)`
+    /// at once - it never stops on the catch or strike beat the way a single striker does.
+    #[test]
+    fn an_area_strike_skips_the_catch_beat() {
+        let mut board = sample_table();
+        // Bastion carries Sweep (a melee AREA strike).
+        let arena = open_a_fight_at(&mut board, &["Bastion"], Some("The Sundered Vault"));
+        let w = wave(&board, arena).expect("a wave is pending");
+        let i = (0..w.units.len())
+            .find(|&i| w.asked[i])
+            .expect("Bastion is asked");
+        assert!(w.units[i].aoe, "Bastion strikes an area");
+        handle_tap(&mut board, w.cards[i]); // select
+        choose(&mut board, 0); // Strike... -> aiming
+        let w = wave(&board, arena).unwrap();
+        let target = w.footprints[i][0];
+        handle_tap(&mut board, w.cards[target]); // tap a lit enemy
+        let w = wave(&board, arena).unwrap();
+        assert_eq!(
+            w.staged[i],
+            Some(Staged::Aim(w.cards[target], 1, 0)),
+            "the area strike staged straight to a one-card commit"
+        );
+        assert!(
+            w.bidding.is_none() && w.striking.is_none() && !w.aiming,
+            "no catch or strike beat for an area strike"
+        );
+        assert!(
+            pending_decision(&board, arena).is_none() || w.staged[i].is_some(),
+            "the order is complete - nothing owed for this body"
+        );
+    }
+
+    /// **The oracle scores each catch.** On the catch beat every catch tile gets its own verdict (never blank),
+    /// so a suboptimal catch can be SEEN to lose - the teaching the feature exists for.
+    #[test]
+    fn the_oracle_scores_each_catch() {
+        let mut board = sample_table();
+        let arena = open_a_fight_at(&mut board, &["Raider"], Some("The Sundered Vault"));
+        let w = wave(&board, arena).unwrap();
+        let i = (0..w.units.len()).find(|&i| w.asked[i]).unwrap();
+        handle_tap(&mut board, w.cards[i]); // select
+        choose(&mut board, 0); // Strike... -> aiming
+        let w = wave(&board, arena).unwrap();
+        let target = w.footprints[i][0];
+        handle_tap(&mut board, w.cards[target]); // -> the catch beat
+        let w = wave(&board, arena).unwrap();
+        assert!(w.bidding.is_some(), "on the catch beat");
+        let tiles = scene_choices(&board, arena);
+        assert_eq!(
+            tiles.len() as u32,
+            w.units[i].tempo,
+            "one tile per catch 1..=tempo"
+        );
+        let mut solver: Solver<StepCombat> = Solver::default();
+        let outlooks = choice_outlooks(&board, arena, &mut solver, 5_000_000);
+        assert_eq!(outlooks.len(), tiles.len(), "an outlook per catch tile");
+        assert!(
+            outlooks
+                .iter()
+                .all(|o| *o != cardtable_model::Outlook::Unknown),
+            "every catch carries a real verdict, so a losing catch can be seen to lose"
+        );
+    }
+
+    /// **The strike beat offers every pour, and a held-back pour stages as chosen.** After the catch, the
+    /// menu is one tile per pour `0..=(tempo-catch)`; picking a non-zero pour stages exactly that commitment.
+    #[test]
+    fn the_strike_beat_offers_every_pour() {
+        let mut board = sample_table();
+        let arena = open_a_fight_at(&mut board, &["Raider"], Some("The Sundered Vault"));
+        let w = wave(&board, arena).unwrap();
+        let i = (0..w.units.len()).find(|&i| w.asked[i]).unwrap();
+        let tempo = w.units[i].tempo;
+        handle_tap(&mut board, w.cards[i]); // select
+        choose(&mut board, 0); // Strike... -> aiming
+        let w = wave(&board, arena).unwrap();
+        let target = w.footprints[i][0];
+        handle_tap(&mut board, w.cards[target]); // -> catch beat
+        choose(&mut board, 0); // Catch 1 -> strike beat
+        let w = wave(&board, arena).unwrap();
+        assert_eq!(
+            w.striking,
+            Some((target, 1)),
+            "on the strike beat at catch 1"
+        );
+        let tiles = scene_choices(&board, arena);
+        assert_eq!(
+            tiles.len() as u32,
+            tempo, // pour 0..=(tempo - 1) is `tempo` options
+            "one tile per pour 0..=(tempo-catch)"
+        );
+        // Pick the last (max pour) tile and confirm it stages with that pour held nothing back.
+        let last = tiles.len() - 1;
+        choose(&mut board, last);
+        let w = wave(&board, arena).unwrap();
+        assert_eq!(
+            w.staged[i],
+            Some(Staged::Aim(w.cards[target], 1, tempo - 1)),
+            "the max-pour tile staged catch 1 + pour (tempo-1)"
+        );
     }
 
     /// The WHAT beat is a **card**: an action tile's synthetic id reads back to the choice index it stands
@@ -2231,7 +2626,11 @@ mod tests {
         let mut conditioned = false;
         for staged in a_targets
             .iter()
-            .map(|&t| Staged::Aim(w.cards[t]))
+            .map(|&t| {
+                let pours = step_pours(w.step);
+                let catch = reach_cards(&w.units, a, t, pours);
+                Staged::Aim(w.cards[t], catch, pour_default(&w.units[a], catch, pours))
+            })
             .chain(std::iter::once(Staged::Hold))
         {
             let mut staged_board = board.clone();

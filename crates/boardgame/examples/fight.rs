@@ -571,16 +571,24 @@ impl Fight {
             // Accumulate the declaration into this round's script - the narration re-simulates from it when the
             // round resolves. (Passes and stays accumulate nothing.)
             match (step, c) {
-                (Step::Havoc, StepChoice::Strike(Some(t))) => self.script.havoc.push((idx, *t)),
+                (Step::Havoc, StepChoice::Strike(Some((t, ..)))) => {
+                    self.script.havoc.push((idx, *t))
+                }
                 (Step::Withdraw, StepChoice::Move(true)) => self.script.withdraw.push(idx),
-                (Step::Skirmish, StepChoice::Strike(Some(t))) => {
+                (Step::Skirmish, StepChoice::Strike(Some((t, ..)))) => {
                     self.script.skirmish.push((idx, *t))
                 }
                 (Step::Cross, StepChoice::Move(true)) => self.script.cross.push(idx),
-                (Step::Volley, StepChoice::Strike(Some(t))) => self.script.volley.push((idx, *t)),
-                (Step::Raid, StepChoice::Strike(Some(t))) => self.script.raid.push((idx, *t)),
-                (Step::Assault, StepChoice::Strike(Some(t))) => self.script.assault.push((idx, *t)),
-                (Step::Advance, StepChoice::Strike(Some(t))) => self.script.advance.push((idx, *t)),
+                (Step::Volley, StepChoice::Strike(Some((t, ..)))) => {
+                    self.script.volley.push((idx, *t))
+                }
+                (Step::Raid, StepChoice::Strike(Some((t, ..)))) => self.script.raid.push((idx, *t)),
+                (Step::Assault, StepChoice::Strike(Some((t, ..)))) => {
+                    self.script.assault.push((idx, *t))
+                }
+                (Step::Advance, StepChoice::Strike(Some((t, ..)))) => {
+                    self.script.advance.push((idx, *t))
+                }
                 _ => {}
             }
         }
@@ -693,15 +701,17 @@ fn describe(step: Step, b: &Board, c: &StepChoice) -> String {
         format!("{} ({} {kind})", u.name, u.health)
     };
     match (step, c) {
-        (Step::Havoc, StepChoice::Strike(Some(t))) => format!("Melee {}", who(*t)),
-        (Step::Skirmish, StepChoice::Strike(Some(t))) => format!("Skirmish {}", who(*t)),
-        (Step::Volley, StepChoice::Strike(Some(t))) => format!("Volley the crossing {}", who(*t)),
-        (Step::Raid, StepChoice::Strike(Some(t))) => format!("Raid {}", who(*t)),
-        (Step::Assault, StepChoice::Strike(Some(t))) => format!("Strike {}", who(*t)),
-        (Step::Advance, StepChoice::Strike(Some(t))) => {
+        (Step::Havoc, StepChoice::Strike(Some((t, ..)))) => format!("Melee {}", who(*t)),
+        (Step::Skirmish, StepChoice::Strike(Some((t, ..)))) => format!("Skirmish {}", who(*t)),
+        (Step::Volley, StepChoice::Strike(Some((t, ..)))) => {
+            format!("Volley the crossing {}", who(*t))
+        }
+        (Step::Raid, StepChoice::Strike(Some((t, ..)))) => format!("Raid {}", who(*t)),
+        (Step::Assault, StepChoice::Strike(Some((t, ..)))) => format!("Strike {}", who(*t)),
+        (Step::Advance, StepChoice::Strike(Some((t, ..)))) => {
             format!("Advance on the exposed {}", who(*t))
         }
-        (_, StepChoice::Strike(Some(t))) => format!("Strike {}", who(*t)),
+        (_, StepChoice::Strike(Some((t, ..)))) => format!("Strike {}", who(*t)),
         (_, StepChoice::Strike(None)) => "Hold (pass this step)".to_string(),
         (Step::Withdraw, StepChoice::Move(true)) => "Withdraw to your own line".to_string(),
         (Step::Withdraw, StepChoice::Move(false)) => "Stay loose in their ranks".to_string(),

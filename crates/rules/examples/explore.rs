@@ -55,14 +55,16 @@ fn show_board(b: &Board) -> String {
 fn label(step: Step, b: &Board, c: &StepChoice) -> String {
     let who = |t: usize| format!("{}({})", b.units[t].name, b.units[t].health);
     match (step, c) {
-        (Step::Havoc, StepChoice::Strike(Some(t))) => format!("Melee {}", who(*t)),
-        (Step::Skirmish, StepChoice::Strike(Some(t))) => format!("Skirmish {}", who(*t)),
-        (Step::Volley, StepChoice::Strike(Some(t))) => format!("Volley the crossing {}", who(*t)),
-        (Step::Raid, StepChoice::Strike(Some(t))) => format!("Raid {}", who(*t)),
-        (Step::Advance, StepChoice::Strike(Some(t))) => {
+        (Step::Havoc, StepChoice::Strike(Some((t, _, _)))) => format!("Melee {}", who(*t)),
+        (Step::Skirmish, StepChoice::Strike(Some((t, _, _)))) => format!("Skirmish {}", who(*t)),
+        (Step::Volley, StepChoice::Strike(Some((t, _, _)))) => {
+            format!("Volley the crossing {}", who(*t))
+        }
+        (Step::Raid, StepChoice::Strike(Some((t, _, _)))) => format!("Raid {}", who(*t)),
+        (Step::Advance, StepChoice::Strike(Some((t, _, _)))) => {
             format!("Advance on the exposed {}", who(*t))
         }
-        (_, StepChoice::Strike(Some(t))) => format!("Strike {}", who(*t)),
+        (_, StepChoice::Strike(Some((t, _, _)))) => format!("Strike {}", who(*t)),
         (_, StepChoice::Strike(None)) => "Hold (pass this step)".to_string(),
         (Step::Withdraw, StepChoice::Move(true)) => "Withdraw to your own line".to_string(),
         (Step::Withdraw, StepChoice::Move(false)) => "Stay loose in their ranks".to_string(),

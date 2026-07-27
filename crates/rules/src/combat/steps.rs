@@ -26,31 +26,38 @@
 //! **Validity is resolver-enforced, menu-independent** (the house rule): a declaration whose actor or target is
 //! fallen, wrong-ranked *at resolution time*, or otherwise unreachable simply drops - it never mislands.
 
-use super::regions::{Attack, Board, Rank, StepLog, close, dissolve, exchange, home_of, living};
+use super::regions::{
+    Attack, Board, Rank, StepLog, close, dissolve, exchange, home_of, living, reach_cards,
+};
 use super::resolve::refresh_round;
+use super::step_game::pour_default;
 
 /// **One round's declarations, per step** - what the decision layer collects wave by wave, and what a test
 /// builds by hand. Every list is `(actor, target)` except the movement steps. Invalid entries drop at the
 /// resolver; an absent body simply passes.
+///
+/// The strike lists are `(actor, target)` PAIRS - a scripted play does not spell a bid; [`play_steps`]
+/// auto-fills the optimal reach via [`reach_cards`] just before each resolver (against the live, post-death
+/// board), which is exactly what resolution computed before the bid became a player choice.
 #[derive(Clone, Debug, Default)]
 pub struct StepScript {
     /// Step 1: in-region strikes - an outrider at a host, a host at an intruding outrider.
-    pub havoc: Vec<Attack>,
+    pub havoc: Vec<(usize, usize)>,
     /// Step 2: outriders withdrawing to their own line.
     pub withdraw: Vec<usize>,
     /// Step 3: the early front trade - vanguard at enemy vanguard.
-    pub skirmish: Vec<Attack>,
+    pub skirmish: Vec<(usize, usize)>,
     /// Step 4: the crossings - vanguards walking into the enemy region (must have declared NO line strike).
     pub cross: Vec<usize>,
     /// Step 5: the volley - rearguard at enemy outrider.
-    pub volley: Vec<Attack>,
+    pub volley: Vec<(usize, usize)>,
     /// Step 6: the raid - a THIS-round arrival at an enemy rearguard.
-    pub raid: Vec<Attack>,
+    pub raid: Vec<(usize, usize)>,
     /// Step 7: the late front trade - vanguard OR rearguard at enemy vanguard.
-    pub assault: Vec<Attack>,
+    pub assault: Vec<(usize, usize)>,
     /// Step 8: the advance - vanguard or rearguard at an enemy rearguard whose screen has fallen (checked at
     /// this step, so a collapse earlier this round opens it).
-    pub advance: Vec<Attack>,
+    pub advance: Vec<(usize, usize)>,
 }
 
 impl StepScript {
@@ -92,12 +99,26 @@ fn step(
 fn valid(board: &Board, list: &[Attack], ok: impl Fn(usize, usize) -> bool) -> Vec<Attack> {
     list.iter()
         .copied()
-        .filter(|&(a, t)| {
+        .filter(|&(a, t, _, _)| {
             !board.units[a].fallen
                 && !board.units[t].fallen
                 && board.units[a].side != board.units[t].side
                 && board.units[a].tempo > 0
                 && ok(a, t)
+        })
+        .collect()
+}
+
+/// Auto-fill the optimal catch AND current-behavior pour for a scripted play: map each `(actor, target)` pair
+/// to a full [`Attack`] against the CURRENT board (post earlier-step deaths) and this step's pour flag -
+/// reproducing exactly the resolution computed before catch/pour became player choices.
+fn bid_fill(board: &Board, pairs: &[(usize, usize)], pours: bool) -> Vec<Attack> {
+    pairs
+        .iter()
+        .map(|&(a, t)| {
+            let catch = reach_cards(&board.units, a, t, pours);
+            let pour = pour_default(&board.units[a], catch, pours);
+            (a, t, catch, pour)
         })
         .collect()
 }
@@ -240,18 +261,24 @@ pub fn play_steps(board: &mut Board, s: &StepScript) -> Vec<StepLog> {
         .map(|i| s.declared_strike(i))
         .collect();
     let mut logs = Vec::new();
-    logs.extend(resolve_havoc(board, &s.havoc));
+    // The pour per step mirrors the resolvers' own `pour` flags (mutual melee 1/3/7/8 pour, volley/raid do
+    // not) - the bid must be sized the same way resolution will spend it.
+    logs.extend(resolve_havoc(board, &bid_fill(board, &s.havoc, true)));
     logs.extend(resolve_withdraw(board, &s.withdraw));
-    logs.extend(resolve_skirmish(board, &s.skirmish));
+    logs.extend(resolve_skirmish(board, &bid_fill(board, &s.skirmish, true)));
     let (landed, lg) = resolve_cross(board, &s.cross, &struck);
     logs.extend(lg);
     let arrived: Vec<bool> = (0..board.units.len())
         .map(|i| landed.contains(&i))
         .collect();
-    logs.extend(resolve_volley(board, &s.volley));
-    logs.extend(resolve_raid(board, &s.raid, &arrived));
-    logs.extend(resolve_assault(board, &s.assault));
-    logs.extend(resolve_advance(board, &s.advance));
+    logs.extend(resolve_volley(board, &bid_fill(board, &s.volley, false)));
+    logs.extend(resolve_raid(
+        board,
+        &bid_fill(board, &s.raid, false),
+        &arrived,
+    ));
+    logs.extend(resolve_assault(board, &bid_fill(board, &s.assault, true)));
+    logs.extend(resolve_advance(board, &bid_fill(board, &s.advance, true)));
     logs
 }
 
@@ -324,8 +351,9 @@ mod tests {
         let mut b = Board::new(
             vec![
                 unit("Raider", Side::Party, [7, 6, 1, 2, 2], true, false), // Might 7 crushes Grit 6 (health 1)
-                // Finesse 3: its 2-card reach (bid 6) prices the Sniper's dodge out (cost 3 > tempo 2), so the
-                // advance is a guaranteed contact - this test asserts the same-round REACH, cleanly.
+                // The Sniper stands - a shot that costs it its only Health is still not worth a 2-tempo slip
+                // (harm 1 <= slip cost 2), and a ranged body cannot answer - so the advance lands cleanly and
+                // this test asserts the same-round REACH.
                 unit("Archer", Side::Party, [5, 2, 1, 2, 3], false, true),
                 unit("Wall", Side::Foe, [1, 1, 6, 1, 2], true, false), // 1 health: collapses to one blow
                 unit("Sniper", Side::Foe, [5, 1, 1, 2, 3], false, true),

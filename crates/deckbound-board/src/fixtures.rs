@@ -169,7 +169,7 @@ const PHASE_BLURB: [&[&str]; 8] = [
 const INTERACTION: [(&str, &[&str]); 4] = [
     ("Target", &["Name whom you strike,", "or pass."]),
     (
-        "Bid",
+        "Catch",
         &[
             "Flip tempo at Finesse to",
             "reach; the target may slip.",
@@ -1241,7 +1241,10 @@ mod tests {
             .iter()
             .map(|&c| t.card(c).unwrap().name())
             .collect();
-        assert_eq!(children, ["1. Target", "2. Bid", "3. Strike", "4. Resolve"]);
+        assert_eq!(
+            children,
+            ["1. Target", "2. Catch", "3. Strike", "4. Resolve"]
+        );
         assert_eq!(
             t.card(*interaction.cards().last().unwrap()).unwrap().name(),
             "Interaction"

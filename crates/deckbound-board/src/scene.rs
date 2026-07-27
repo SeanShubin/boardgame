@@ -29,7 +29,7 @@ pub fn scene(board: &Board, _focus: PileId) -> Option<Scene> {
 
     let (k, name) = step_coord(w.step);
     let over = arena::outcome(board, arena).is_some();
-    let tracks = build_tracks(w.step);
+    let tracks = build_tracks(&w);
     let heading = format!("Round {}", w.round);
     // The text under the heading is the STEP DIRECTIVE (locator + one imperative for the move to make),
     // optionally followed by an action line for a gesture the visible cues can't convey. It replaces the old
@@ -122,25 +122,50 @@ fn stat_legend() -> Vec<String> {
     ]
 }
 
-/// The one progress track: the eight steps of the round in schedule order, the current one lit, and the
-/// Reset at the end - the deadline that closes every unfinished wound. (The step deck is the physical
-/// truth; this is its fixed-order display.)
-fn build_tracks(step: Step) -> Vec<Track> {
+/// Two progress tracks. **Step**: the eight steps of the round in schedule order, the current one lit, then
+/// the Reset that closes every unfinished wound. **Interaction**: the four minor steps every single strike
+/// runs - `Target` (choosing the WHOM), `Catch` (the reach), `Strike` (the pour), `Resolve` (automatic) -
+/// with the live beat lit so the anatomy of the strike you are building is visible where you fight.
+fn build_tracks(w: &arena::Wave) -> Vec<Track> {
     let mut items: Vec<TrackItem> = STEPS
         .into_iter()
         .map(|s| TrackItem {
             label: step_coord(s).1.to_string(),
-            current: s == step,
+            current: s == w.step,
         })
         .collect();
     items.push(TrackItem {
         label: "Reset".to_string(),
         current: false,
     });
-    vec![Track {
+    let phase = Track {
         title: "Step".to_string(),
         items,
-    }]
+    };
+
+    // The live minor beat: Target (aiming) -> Catch (bidding) -> Strike (striking); Resolve is automatic at
+    // Commit, so it is never "current". Nothing is lit between strikes.
+    let minor_current = if w.striking.is_some() {
+        Some("Strike")
+    } else if w.bidding.is_some() {
+        Some("Catch")
+    } else if w.aiming {
+        Some("Target")
+    } else {
+        None
+    };
+    let interaction = Track {
+        title: "Interaction".to_string(),
+        items: ["Target", "Catch", "Strike", "Resolve"]
+            .into_iter()
+            .map(|label| TrackItem {
+                label: label.to_string(),
+                current: Some(label) == minor_current,
+            })
+            .collect(),
+    };
+
+    vec![phase, interaction]
 }
 
 /// The step's directive: **one imperative** naming the move to make, no rules footnotes. The step is already
@@ -278,7 +303,7 @@ fn sel_of(w: &arena::Wave, i: usize) -> Highlight {
         return Highlight::Targeted;
     }
     let committed = (0..w.units.len()).any(|j| match w.staged[j] {
-        Some(Staged::Aim(t)) => {
+        Some(Staged::Aim(t, ..)) => {
             if w.units[j].aoe {
                 w.footprints[j].contains(&i)
             } else {
@@ -301,9 +326,12 @@ fn lane_tile(board: &Board, w: &arena::Wave, maxes: &[u32], i: usize, sel: Highl
         Team::Right
     };
     let bar_tone = if u.fallen { Tone::Faded } else { Tone::Muted };
+    // A horde's health pool IS its body count - one Health card per body - so name it "Bodies" to answer
+    // "how many are in the pack?" straight off the tile, the way the log already reads ("fells N bodies").
+    let pool = if u.horde { "Bodies" } else { "Health" };
     let mut badges = vec![Badge {
         text: format!(
-            "Health {}/{}  Tempo {}/{}",
+            "{pool} {}/{}  Tempo {}/{}",
             u.health, maxes[i], u.tempo, u.cadence
         ),
         tone: bar_tone,
@@ -446,12 +474,16 @@ fn tap_is_live(w: &arena::Wave, i: usize) -> bool {
 /// The staged-order line: what this body will do when the wave commits.
 fn plan_text(board: &Board, w: &arena::Wave, i: usize) -> String {
     match w.staged[i] {
-        Some(Staged::Aim(t)) => {
+        Some(Staged::Aim(t, catch, pour)) => {
             let name = board
                 .card(t)
                 .map(|c| c.front_title().to_string())
                 .unwrap_or_default();
-            format!("-> {name}")
+            if pour > 0 {
+                format!("-> {name} (catch {catch}, +{pour})")
+            } else {
+                format!("-> {name} (catch {catch})")
+            }
         }
         Some(Staged::Hold) => "Hold".to_string(),
         Some(Staged::Go) => match w.step {
@@ -524,10 +556,23 @@ mod tests {
         let arena = crate::arena::open_fight(&mut board, vault).expect("opens");
 
         let s = scene(&board, arena).expect("a fight scene");
-        assert_eq!(s.tracks.len(), 1, "one step track");
+        assert_eq!(
+            s.tracks.len(),
+            2,
+            "the Step track and the Interaction track"
+        );
         assert!(
             s.tracks[0].items.iter().any(|i| i.current),
             "the current step is lit"
+        );
+        assert_eq!(
+            s.tracks[1].title, "Interaction",
+            "the second track is the per-strike minor steps"
+        );
+        assert_eq!(
+            s.tracks[1].items.len(),
+            4,
+            "Target / Catch / Strike / Resolve"
         );
         let SceneBody::Lanes(lanes) = &s.body else {
             panic!("the battlefield is lanes");

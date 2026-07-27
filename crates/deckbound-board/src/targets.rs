@@ -167,7 +167,7 @@ pub fn schedule_card() -> Vec<String> {
         out.push(format!("{k} {name}: {line}"));
     }
     out.push(String::new());
-    out.push("Minor steps: target, bid, strike, resolve".to_string());
+    out.push("Minor steps: target, catch, strike, resolve".to_string());
     out
 }
 

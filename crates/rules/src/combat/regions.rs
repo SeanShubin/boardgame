@@ -215,7 +215,9 @@ fn strike_yield(board: &Board, a: usize, t: usize) -> (u32, u32) {
     if per_blow == 0 {
         return (0, 0);
     }
-    let strikes = 1 + att.tempo.saturating_sub(reach_cards(&board.units, a, t));
+    let strikes = 1 + att
+        .tempo
+        .saturating_sub(reach_cards(&board.units, a, t, true));
     if tar.horde {
         // No spill: an aimed blow fells one body per penetrating strike, a sweep clears the whole pack.
         if per_blow < tar.grit.max(1) {
@@ -406,62 +408,213 @@ fn engage(board: &mut Board, engagements: &[Engage]) -> Vec<Contact> {
         if cards == 0 {
             continue; // you cannot reach for someone without committing to it
         }
-        let finesse = u.finesse.max(1);
         // A horde reaches as one: every living body grabs together, so a single tempo card's bid is multiplied by
-        // the whole body count. That is what makes a swarm **hard to slip** - both when it catches a crosser and
-        // when it pins its own target - even though its Cadence tempo is small. (Its damage is likewise the whole
-        // swarm at once; see `land`.) The defence side gets no such multiplier (see `slip_cost`): a swarm is a
-        // fearsome catcher and a poor evader.
-        let mult = if u.horde { u.health.max(1) } else { 1 };
+        // the whole body count (see `per_card`). That is what makes a swarm **hard to slip** - both when it
+        // catches a crosser and when it pins its own target - even though its Cadence tempo is small. (Its damage
+        // is likewise the whole swarm at once; see `land`.) The defence side gets no such multiplier (see
+        // `slip_cost`): a swarm is a fearsome catcher and a poor evader.
+        let bid = cards * per_card(u);
         board.units[e.attacker].tempo -= cards;
         contacts.push(Contact {
             attacker: e.attacker,
             target: e.target,
-            bid: cards * finesse * mult,
+            bid,
         });
     }
     contacts
 }
 
-/// The greedy reach: the fewest cards the target cannot afford to evade - so it lands for certain - else one card
-/// and take the chance. Every card saved becomes a blow.
-pub fn reach_cards(units: &[Combatant], a: usize, t: usize) -> u32 {
-    if units[a].aoe {
-        return 1; // an area strike forms no contact and cannot be evaded
-    }
-    // A horde's bid is amplified by its body count (see `engage`), so it pins a target with far fewer cards.
-    let bodies = if units[a].horde {
-        units[a].health.max(1)
+/// The bid one reach card is worth in the slip contest: a normal body bids its Finesse, a horde reaches as one
+/// mass so a single card's bid is multiplied by the whole body count (mirrors the multiplier in [`engage`]).
+fn per_card(u: &Combatant) -> u32 {
+    let bodies = if u.horde { u.health.max(1) } else { 1 };
+    u.finesse.max(1) * bodies
+}
+
+/// How many blows an attacker lands this step: the opening blow the reach paid for, plus - in a pouring step -
+/// one per leftover tempo card. A horde swings ONE volley and never pours (mirrors `poured`'s `!horde` guard),
+/// so its strike count stays 1 whatever the pour.
+fn attack_strikes(att: &Combatant, tempo_left: u32, pour: bool) -> u32 {
+    1 + if pour && !att.horde { tempo_left } else { 0 }
+}
+
+/// The Health cards (normal target) or bodies (horde target) unit `i` loses if it **stands** against
+/// `sources` - each an incoming `(attacker, strikes)`. An exact analytic mirror of [`land`]: a normal body
+/// banks every attacker's Might into ONE Grit pile and flips a card per Grit cleared (sum first, then one
+/// floor-divide, the leftover discarded at the boundary), so multi-attacker damage combines; a horde loses one
+/// body per PENETRATING blow (`Might - armor >= Grit`), no spill. A horde ATTACKER lands its whole body count
+/// at once (`Might x health` per blow). This is the "harm to me if I stand" the sensible reflexes weigh.
+fn harm_from(units: &[Combatant], i: usize, sources: &[(usize, u32)]) -> u32 {
+    let tar = &units[i];
+    if tar.horde {
+        let felled: u32 = sources
+            .iter()
+            .filter(|&&(a, _)| units[a].might.saturating_sub(tar.armor) >= tar.grit.max(1))
+            .map(|&(_, strikes)| strikes)
+            .sum();
+        felled.min(tar.health)
     } else {
-        1
+        let bar = tar.grit.max(1);
+        let damage: u32 = sources
+            .iter()
+            .map(|&(a, strikes)| {
+                let per = units[a].might.saturating_sub(tar.armor);
+                let per = if units[a].horde {
+                    per * units[a].health.max(1)
+                } else {
+                    per
+                };
+                per * strikes
+            })
+            .sum();
+        (damage / bar).min(tar.health)
+    }
+}
+
+/// **The sensible dodge for `i`.** Slip only when it is worth the tempo: you can afford it, you have no melee
+/// edge to answer along, and STANDING costs you strictly more Health/bodies than the slip costs tempo - a tie
+/// keeps the tempo, which is worth more as a future blow ("every card saved becomes a blow"). This is the fix
+/// for a body that used to disarm itself, burning the tempo it needed to attack on a slip it did not need.
+/// Reads each attacker's CURRENT tempo, so at auto-dodge time - after [`engage`] has spent the reach - that is
+/// exactly the pour it is about to deliver.
+fn would_slip(units: &[Combatant], reaching: &[Contact], i: usize, pour: bool) -> bool {
+    let Some(cost) = slip_cost(units, reaching, i) else {
+        return false; // nothing reaching you
     };
-    let per_card = units[a].finesse.max(1) * bodies;
+    if units[i].fallen || cost > units[i].tempo {
+        return false; // cannot afford the slip
+    }
+    if can_answer(units, reaching, i).is_some() {
+        return false; // an edge you can swing along beats an escape
+    }
+    let sources: Vec<(usize, u32)> = reaching
+        .iter()
+        .filter(|c| c.target == i)
+        .map(|c| {
+            (
+                c.attacker,
+                attack_strikes(&units[c.attacker], units[c.attacker].tempo, pour),
+            )
+        })
+        .collect();
+    harm_from(units, i, &sources) > cost
+}
+
+/// The Health/bodies `a` lands on `t` by bidding `c` reach cards, predicting `t`'s dodge with the SAME
+/// arithmetic [`would_slip`] uses - so the bid and the auto-dodge agree in the single-attacker case. A slip
+/// breaks every contact, so a bid that gets slipped lands nothing. No recursion is possible: the strike count
+/// comes from the explicit candidate `c`, never from a nested `reach_cards`. Per-pair (like the old bid): it
+/// prices only this attacker's bid, a bounded deterministic approximation when a target is co-attacked.
+fn pair_lands(units: &[Combatant], a: usize, t: usize, c: u32, pour: bool) -> u32 {
+    match bid_outcome(units, a, t, c, pour) {
+        BidOutcome::Lands(x) => x,
+        BidOutcome::Slipped => 0,
+    }
+}
+
+/// What a strike does to `t`: the harm it lands if the target stands, or `Slipped` if the target's sensible
+/// dodge evades it (a slip breaks every contact, so nothing lands). `Lands(0)` (stands but harmless) reads
+/// differently from `Slipped` (dodged away).
+pub enum BidOutcome {
+    Lands(u32),
+    Slipped,
+}
+
+/// The outcome of committing `catch` reach cards and `pour` extra blows against `t`: `catch` sets the bid the
+/// target must beat to slip, `1 + pour` blows land if it stands. A picker shows this per (catch, pour) - note
+/// a bigger pour lands more when the target stands, but the extra harm can also tip a sensible target into
+/// slipping (dodging the whole strike), which the picker then reads as `Slipped`.
+pub fn strike_outcome(
+    units: &[Combatant],
+    a: usize,
+    t: usize,
+    catch: u32,
+    pour: u32,
+) -> BidOutcome {
+    let bid = catch * per_card(&units[a]);
+    let strikes = attack_strikes(&units[a], pour, true); // 1 opening blow + pour (a horde swings one volley)
+    let landed = harm_from(units, t, &[(a, strikes)]);
+    let cost = slip_price(bid, units[t].finesse);
+    let affordable = cost <= units[t].tempo;
+    // The pure a->t form of `can_answer`: a melee defender answers a melee reach, but a shot from range is
+    // never answered.
+    let answerable = units[t].melee && (!units[a].ranged || units[a].melee);
+    let stands = !affordable || answerable || landed <= cost;
+    if stands {
+        BidOutcome::Lands(landed)
+    } else {
+        BidOutcome::Slipped
+    }
+}
+
+/// [`strike_outcome`] at the current-behavior all-in pour (all remaining tempo after the catch, for a
+/// non-horde in a pouring step) - the shape [`reach_cards`]/[`pair_lands`] size the catch against.
+pub fn bid_outcome(units: &[Combatant], a: usize, t: usize, c: u32, pours: bool) -> BidOutcome {
+    let pour = if pours && !units[a].horde {
+        units[a].tempo.saturating_sub(c)
+    } else {
+        0
+    };
+    strike_outcome(units, a, t, c, pour)
+}
+
+/// A landing strike, for a picker badge: the blow count and the raw damage it banks.
+pub struct Landed {
+    pub strikes: u32,
+    pub damage: u32,
+}
+
+/// A player-facing report of a strike at `(catch, pour)`: `Some(Landed)` with the blow count and the **raw
+/// damage** it banks into the target's Grit pile, or `None` if the target slips. Damage - not cards flipped -
+/// is the honest per-attacker quantity, because the Grit pile is SHARED: whether a card actually flips depends
+/// on every blow into that target this step, not this strike alone.
+pub fn strike_report(
+    units: &[Combatant],
+    a: usize,
+    t: usize,
+    catch: u32,
+    pour: u32,
+) -> Option<Landed> {
+    match strike_outcome(units, a, t, catch, pour) {
+        BidOutcome::Slipped => None,
+        BidOutcome::Lands(_) => {
+            let strikes = attack_strikes(&units[a], pour, true);
+            let per_blow = units[a].might.saturating_sub(units[t].armor);
+            let per_blow = if units[a].horde {
+                per_blow * units[a].health.max(1)
+            } else {
+                per_blow
+            };
+            Some(Landed {
+                strikes,
+                damage: per_blow * strikes,
+            })
+        }
+    }
+}
+
+/// **The dodge-aware reach**: bid the `c` cards that LAND the most, predicting the target's sensible dodge -
+/// ties broken toward the fewest reach cards, since every card saved from the reach pours into a blow. When
+/// the target will stand anyway that is one card (reach the minimum, pour the rest); the bid only climbs to
+/// price a dodge out when pinning lands strictly more than pouring would. An area strike forms no contact and
+/// cannot be evaded, so it always bids one.
+///
+/// Note this maximizes THIS step's landed harm; it does not model bidding low to bait a target into wasting
+/// tempo - but a sensible target no longer makes that wasteful slip, so there is nothing to bait.
+pub fn reach_cards(units: &[Combatant], a: usize, t: usize, pour: bool) -> u32 {
+    if units[a].aoe {
+        return 1;
+    }
     (1..=units[a].tempo)
-        .find(|&c| slip_price(c * per_card, units[t].finesse) > units[t].tempo)
+        .max_by_key(|&c| (pair_lands(units, a, t, c, pour), std::cmp::Reverse(c)))
         .unwrap_or(1)
 }
 
-/// The greedy dodge for an ordinary exchange (not a slip): stand if you can answer along the edge, else evade if
-/// you can afford it and the blow really threatens you.
-fn dodges_against(board: &Board, reaching: &[Contact]) -> Vec<Dodge> {
+/// The dodge for every body this wave: each stands or slips by the sensible rule [`would_slip`].
+fn dodges_against(board: &Board, reaching: &[Contact], pour: bool) -> Vec<Dodge> {
     (0..board.units.len())
         .map(|i| {
-            let Some(cost) = slip_cost(&board.units, reaching, i) else {
-                return Dodge::Stand;
-            };
-            if board.units[i].fallen || cost > board.units[i].tempo {
-                return Dodge::Stand;
-            }
-            if can_answer(&board.units, reaching, i).is_some() {
-                return Dodge::Stand; // an edge you can swing along beats an escape
-            }
-            let worst = reaching
-                .iter()
-                .filter(|c| c.target == i)
-                .map(|c| board.units[c.attacker].might)
-                .max()
-                .unwrap_or(0);
-            if worst >= board.units[i].grit.max(1) {
+            if would_slip(&board.units, reaching, i, pour) {
                 Dodge::Slip
             } else {
                 Dodge::Stand
@@ -691,24 +844,28 @@ fn land(board: &mut Board, contacts: &[Contact], sweeps: &[Contact], extra: &[Bl
     log
 }
 
-/// One body attacking another: `(attacker, target)`.
-pub(super) type Attack = (usize, usize);
+/// One body attacking another with a chosen commitment: `(attacker, target, catch, pour)`. `catch` tempo
+/// cards buy the reach past the slip; `pour` more become extra blows; `tempo - catch - pour` is held back.
+/// Both arrive on the `Attack` now rather than being fabricated inside [`exchange`]/[`poured`], so a player
+/// can choose them.
+pub(super) type Attack = (usize, usize, u32, u32);
 
 /// The blows a body pours **into the target it declared**, once its reach is paid for. No pour without a
 /// declaration: a body that declared `Hold` holds.
 fn poured(board: &Board, attacks: &[Attack], contacts: &[Contact]) -> Vec<Blows> {
     attacks
         .iter()
-        .filter(|&&(a, t)| {
-            !board.units[a].fallen
+        .filter(|&&(a, t, _catch, pour)| {
+            pour > 0
+                && !board.units[a].fallen
                 && !board.units[a].horde // a horde swings ONE volley (body-count x Might); it does not pour extra
                 && board.units[a].tempo > 0
                 && contacts.iter().any(|c| c.attacker == a && c.target == t)
         })
-        .map(|&(a, t)| Blows {
+        .map(|&(a, t, _catch, pour)| Blows {
             unit: a,
             target: t,
-            cards: board.units[a].tempo,
+            cards: pour.min(board.units[a].tempo), // the CHOSEN pour, not all remaining
         })
         .collect()
 }
@@ -786,22 +943,24 @@ pub(super) fn exchange(
     let mut sweeps: Vec<Contact> = Vec::new();
     let mut sweep_hits: Vec<Hit> = Vec::new();
     let mut aimed: Vec<Engage> = Vec::new();
-    for &(a, t) in attacks {
+    for &(a, t, catch, _pour) in attacks {
         if board.units[a].aoe {
             let (region, tier) = (board.regions[t], board.ranks[t]);
             let (contacts, felled) = area_strike(board, a, region, tier, sweep_whole);
             sweeps.extend(contacts);
             sweep_hits.extend(felled);
         } else {
+            // The catch arrives on the Attack (a player's choice, or the auto-optimal reach the declaration
+            // layer attached); the pour rides it too and is spent in `poured`.
             aimed.push(Engage {
                 attacker: a,
                 target: t,
-                cards: reach_cards(&board.units, a, t),
+                cards: catch,
             });
         }
     }
     let reaching = engage(board, &aimed);
-    let dodges = dodges_against(board, &reaching);
+    let dodges = dodges_against(board, &reaching, pour);
     let contacts = resolve_evade(&mut board.units, &reaching, &dodges);
     let reaches = reaches_of(&reaching, &contacts); // the aimed slip contest, bids and who slipped
 
@@ -933,7 +1092,7 @@ mod tests {
         let mut pack = unit("Pack", Side::Foe, [1, 6, 3, 1, 1], true, false);
         pack.horde = true;
         let mut b = Board::new(vec![pen, pack.clone()], vec![0, 1]);
-        exchange(&mut b, &[(0, 1)], true, false);
+        exchange(&mut b, &[(0, 1, 1, 1)], true, false); // catch 1 + pour 1 = 2 strikes
         assert_eq!(
             b.units[1].health, 4,
             "two penetrating strikes fell exactly two bodies - Might 9 overkill is wasted"
@@ -942,7 +1101,7 @@ mod tests {
         let mut weak = unit("Jab", Side::Party, [2, 9, 3, 4, 1], true, false);
         weak.tempo = 4;
         let mut b = Board::new(vec![weak, pack], vec![0, 1]);
-        exchange(&mut b, &[(0, 1)], true, false);
+        exchange(&mut b, &[(0, 1, 1, 3)], true, false); // catch 1 + pour 3 = 4 strikes
         assert_eq!(
             b.units[1].health, 6,
             "Might 2 never penetrates Grit 3: four strikes fell nothing"
@@ -957,7 +1116,7 @@ mod tests {
         pack.horde = true;
         let hero = unit("Hero", Side::Party, [1, 5, 5, 1, 2], true, false);
         let mut b = Board::new(vec![hero, pack], vec![0, 1]);
-        exchange(&mut b, &[(1, 0)], true, false);
+        exchange(&mut b, &[(1, 0, 1, 0)], true, false);
         // 6 bodies x Might 1 = 6 banked against Grit 5: one card flips, 1 remains in the pile.
         assert_eq!(b.units[0].health, 4, "the volley is the whole pack at once");
     }
@@ -977,7 +1136,7 @@ mod tests {
             ],
             vec![0, 1, 1, 1],
         );
-        exchange(&mut b, &[(0, 1)], true, false); // aimed at the front tier
+        exchange(&mut b, &[(0, 1, 1, 0)], true, false); // aimed at the front tier
         assert!(
             b.units[1].health < 3 && b.units[2].health < 3,
             "the sweep catches the WHOLE front line"
@@ -999,14 +1158,14 @@ mod tests {
         tough.horde = true;
 
         let mut b = Board::new(vec![bomber.clone(), pack], vec![0, 1]);
-        exchange(&mut b, &[(0, 1)], true, false);
+        exchange(&mut b, &[(0, 1, 1, 0)], true, false);
         assert_eq!(
             b.units[1].health, 0,
             "Might 4 >= Grit 3: the whole pack falls at once"
         );
 
         let mut b = Board::new(vec![bomber, tough], vec![0, 1]);
-        exchange(&mut b, &[(0, 1)], true, false);
+        exchange(&mut b, &[(0, 1, 1, 0)], true, false);
         assert_eq!(
             b.units[1].health, 8,
             "Might 4 < Grit 5: the sweep dents nothing"
@@ -1021,7 +1180,7 @@ mod tests {
         let wall = unit("Wall", Side::Foe, [1, 3, 5, 1, 2], true, false);
         let mut b = Board::new(vec![jab, wall], vec![0, 1]);
         let before = living(&b);
-        exchange(&mut b, &[(0, 1)], true, false);
+        exchange(&mut b, &[(0, 1, 1, 0)], true, false);
         assert_eq!(b.units[1].pending, 2, "2 banked against the Grit-5 bar");
         close(&mut b, &before);
         assert_eq!(
@@ -1031,18 +1190,18 @@ mod tests {
         assert_eq!(b.units[1].health, 3, "no card flipped");
     }
 
-    /// `reach_cards` bids the fewest cards the target cannot afford to slip; a horde's body-count multiplier
-    /// makes its single card a pinning bid.
+    /// `reach_cards` bids the `c` that lands the most, predicting the target's sensible dodge: when the target
+    /// stands anyway it bids one and pours the rest, and a horde's body-count multiplier still pins with one.
     #[test]
     fn reach_bids_just_enough_to_pin() {
         let a = unit("Raider", Side::Party, [6, 6, 1, 4, 2], true, false);
         let slippery = unit("Dancer", Side::Foe, [2, 3, 1, 3, 4], true, false);
         let units = vec![a, slippery];
-        // Every affordable bid leaves the Dancer a slip it can pay - so bid the minimum and take the chance.
+        // The melee Dancer answers a melee reach, so it stands whatever the bid - bid the minimum and pour.
         assert_eq!(
-            reach_cards(&units, 0, 1),
+            reach_cards(&units, 0, 1, true),
             1,
-            "cannot price the dodge out - bid the minimum"
+            "the target stands anyway - catch with the minimum, the rest strikes"
         );
 
         let mut pack = unit("Pack", Side::Party, [1, 6, 3, 1, 1], true, false);
@@ -1050,9 +1209,36 @@ mod tests {
         let units = vec![pack, unit("Hero", Side::Foe, [5, 5, 1, 2, 2], true, false)];
         // 1 card x Finesse 1 x 6 bodies = bid 6 -> slip price 6/2+1 = 4 > tempo 2: pinned by one card.
         assert_eq!(
-            reach_cards(&units, 0, 1),
+            reach_cards(&units, 0, 1, true),
             1,
             "the pack pins with a single card"
+        );
+    }
+
+    /// **The chosen pour on the `Attack` is what `exchange` spends** - not "all remaining". Same catch, two
+    /// pours: more poured cards become more blows, so a target that stands takes more. Holding the pour back
+    /// (pour 0) lands only the opening blow and keeps the tempo.
+    #[test]
+    fn exchange_honors_the_chosen_pour() {
+        // Might 2, tempo 3; the target has NO tempo, so it always stands - the only variable is the pour.
+        let jab = unit("Jab", Side::Party, [2, 9, 1, 3, 2], true, false);
+        let mut dummy = unit("Post", Side::Foe, [1, 20, 1, 1, 2], true, false);
+        dummy.tempo = 0;
+
+        let mut dumped = Board::new(vec![jab.clone(), dummy.clone()], vec![0, 1]);
+        exchange(&mut dumped, &[(0, 1, 1, 2)], true, false); // catch 1 + pour 2 = 3 strikes -> 6 flipped
+        let mut held = Board::new(vec![jab, dummy], vec![0, 1]);
+        exchange(&mut held, &[(0, 1, 1, 0)], true, false); // catch 1 + pour 0 = 1 strike -> 2 flipped
+
+        assert_eq!(dumped.units[1].health, 14, "pour 2: 3 strikes flip 6");
+        assert_eq!(held.units[1].health, 18, "pour 0: the opening blow flips 2");
+        assert_eq!(
+            dumped.units[0].tempo, 0,
+            "dumping spends catch + pour = all 3 tempo"
+        );
+        assert_eq!(
+            held.units[0].tempo, 2,
+            "holding the pour back keeps 2 tempo (only the catch was spent)"
         );
     }
 
