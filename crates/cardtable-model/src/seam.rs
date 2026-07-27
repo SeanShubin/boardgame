@@ -72,6 +72,14 @@ pub trait BoardGame {
         None
     }
 
+    /// Per-**cell** status marks for the currently-focused zone: `(cell_pile, mark)` pairs the renderer draws
+    /// on the matching cells (e.g. a "cleared" tag on beaten location cells). Read-only, like
+    /// [`status_line`](BoardGame::status_line) but per cell rather than per screen. Empty (the default) = none.
+    fn cell_status(&self, board: &Board, focus: PileId) -> Vec<(PileId, String)> {
+        let _ = (board, focus);
+        Vec::new()
+    }
+
     /// Interpret a click on the [`Scene`]'s choice at `index` (into [`Scene::choices`](crate::Scene::choices))
     /// — the decision the game is currently asking for. `None` if it means nothing (a barred option). Most
     /// games ask for no such decisions, so the default is `None`.

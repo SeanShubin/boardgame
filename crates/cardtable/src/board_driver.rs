@@ -118,6 +118,12 @@ pub struct DisabledAffordances(pub Vec<usize>);
 #[derive(Resource, Default)]
 pub struct ZoneStatus(pub Option<String>);
 
+/// Per-cell status marks for the focused zone (e.g. a "cleared" tag on beaten location cells), drained from
+/// [`BoardGame::cell_status`](cardtable_model::BoardGame::cell_status) by [`sync_affordances`] and drawn on the
+/// matching cells. Empty = no marks.
+#[derive(Resource, Default)]
+pub struct CellMarks(pub Vec<(cardtable_model::PileId, String)>);
+
 /// The **modal scene** the game wants drawn in place of the felt (a combat arena), or `None` for the ordinary
 /// table. Filled by [`sync_affordances`] from [`BoardGame::scene`](cardtable_model::BoardGame::scene); the
 /// renderer draws it without knowing what it means. Core-owned so `redraw` / the arrow overlay read it
@@ -313,6 +319,7 @@ fn apply_undo(
 /// Recompute the current zone's affordances **and** modal scene from the game each frame: labels + intentions
 /// for the controls, and the [`SceneState`] the renderer draws. Cheap (small lookups); runs before the Draw
 /// set so `redraw` sees fresh state.
+#[allow(clippy::too_many_arguments)] // a Bevy system — its inputs are resources, not a god-param
 fn sync_affordances<G>(
     table: Res<Table>,
     game: Res<GameRes<G>>,
@@ -321,6 +328,7 @@ fn sync_affordances<G>(
     mut affordances: ResMut<Affordances<G>>,
     mut scene: ResMut<SceneState>,
     mut status: ResMut<ZoneStatus>,
+    mut cell_marks: ResMut<CellMarks>,
 ) where
     G: BoardGame + Send + Sync + 'static,
     G::Intention: Send + Sync + 'static,
@@ -335,6 +343,7 @@ fn sync_affordances<G>(
     disabled.0 = game.0.disabled_affordances(&table.0, focus);
     scene.0 = game.0.scene(&table.0, focus);
     status.0 = game.0.status_line(&table.0, focus);
+    cell_marks.0 = game.0.cell_status(&table.0, focus);
 }
 
 // ---- the plugin ----------------------------------------------------------------------------------

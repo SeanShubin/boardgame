@@ -116,6 +116,7 @@ impl Plugin for CardTablePlugin {
             .init_resource::<AffordanceLabels>()
             .init_resource::<DisabledAffordances>()
             .init_resource::<crate::board_driver::ZoneStatus>()
+            .init_resource::<crate::board_driver::CellMarks>()
             .init_resource::<SceneState>()
             .init_resource::<DropTrace>()
             .init_resource::<FontSample>()
@@ -1795,6 +1796,7 @@ fn redraw(
     disabled: Res<DisabledAffordances>,
     scene: Res<SceneState>,
     zone_status: Res<crate::board_driver::ZoneStatus>,
+    cell_marks: Res<crate::board_driver::CellMarks>,
     history: Res<crate::board_driver::BoardHistory>,
     font_sample: Res<FontSample>,
     ui_fonts: Option<Res<UiFonts>>,
@@ -1825,6 +1827,7 @@ fn redraw(
         &affordances.0,
         &disabled.0,
         zone_status.0.as_deref(),
+        &cell_marks.0,
     );
 }
 
@@ -3143,6 +3146,9 @@ const EXIT_CONFIRM_BG: Color = Color::srgb(0.55, 0.22, 0.20);
 const ACTIONABLE: Color = Color::srgb(0.30, 0.70, 0.62);
 /// A dark edge around every card so overlapping cards stay distinct.
 const CARD_EDGE: Color = Color::srgb(0.12, 0.11, 0.10);
+/// The edge a **cleared** location cell wears - a calm green rim that stays visible above cascaded tokens,
+/// distinct from the dark [`CARD_EDGE`] of an unbeaten cell.
+const CLEARED_EDGE: Color = Color::srgb(0.36, 0.62, 0.44);
 /// Soft drop shadow lifting cards and piles off the felt.
 const SHADOW: Color = Color::srgba(0.0, 0.0, 0.0, 0.35);
 /// The **movable cue** — a *thin, pale* ring worn by every card whose drag triggers a game action, so
@@ -3315,6 +3321,7 @@ const CARD_H: i32 = card_layout::SMALL_H + 4;
 /// inset — its cards share the felt and the [`Pinned`] fixtures shove them clear instead. See [`build_ui`].
 const OVERLAY_BAND: i32 = 52;
 
+#[allow(clippy::too_many_arguments)] // a draw builder — its inputs are the resources redraw feeds it
 fn build_ui(
     commands: &mut Commands,
     tree: &Board,
@@ -3323,6 +3330,7 @@ fn build_ui(
     affordances: &[String],
     disabled: &[usize],
     status: Option<&str>,
+    cell_marks: &[(PileId, String)],
 ) {
     // Defensive: a stale / incompatible save could focus a pile that no longer exists — fall back to the
     // root rather than panic the draw.
@@ -3632,7 +3640,15 @@ fn build_ui(
                                             top: Val::Px(0.0),
                                             ..default()
                                         })
-                                        .with_children(|slot| spawn_place_card(slot, tree, place));
+                                        .with_children(
+                                            |slot| {
+                                                let mark = cell_marks
+                                                    .iter()
+                                                    .find(|(p, _)| *p == place)
+                                                    .map(|(_, m)| m.as_str());
+                                                spawn_place_card(slot, tree, place, mark)
+                                            },
+                                        );
                                         // Each token cascades one strip lower and sits above the last, so the
                                         // card above shows only its title. Movable so the drag observers fire.
                                         for (i, tok) in tokens.into_iter().enumerate() {
@@ -4134,11 +4150,23 @@ fn spawn_pile(parent: &mut ChildSpawnerCommands, tree: &Board, id: PileId) {
 /// character's token here moves them to this place (resolved by [`on_node_drag_end`] against its
 /// [`PileDropZone`]); clicking it drills into the place (the Inn lives inside Ashfen). It wears the card
 /// back so it reads as a fixed board square, distinct from the light-faced character tokens on it.
-fn spawn_place_card(parent: &mut ChildSpawnerCommands, tree: &Board, place: PileId) {
+fn spawn_place_card(
+    parent: &mut ChildSpawnerCommands,
+    tree: &Board,
+    place: PileId,
+    mark: Option<&str>,
+) {
     // Carry the same `(N)` physical tally the deck chips show — here it counts the place's own location
     // card plus whatever is stacked under it (encounters, character tokens, or the inn), and updates as
     // characters move in and out. It rides in the top strip, which stays exposed above cascaded tokens.
     let name = zone_title_with_count(tree, place);
+    // A game-declared cell mark (e.g. "cleared") tints the always-visible border and rides as the subtitle,
+    // which shows when no token is cascaded over it.
+    let edge = if mark.is_some() {
+        CLEARED_EDGE
+    } else {
+        CARD_EDGE
+    };
     parent
         .spawn((
             // Pure visual — the drop target + click-to-drill live on the enclosing cell (which spans the
@@ -4160,11 +4188,11 @@ fn spawn_place_card(parent: &mut ChildSpawnerCommands, tree: &Board, place: Pile
                 ..default()
             },
             BackgroundColor(CARD_BACK),
-            BorderColor::all(CARD_EDGE),
+            BorderColor::all(edge),
             card_shadow(),
         ))
         .with_children(|face| {
-            small_face(face, &name, "Location", INK, None);
+            small_face(face, &name, "Location", INK, mark.map(str::to_string));
         });
 }
 

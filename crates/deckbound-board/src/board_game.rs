@@ -278,6 +278,25 @@ impl BoardGame for CardTableGame {
         Some(format!("{cleared} of {total} encounters cleared"))
     }
 
+    /// On the Locations map, tag each **cleared** cell (one carrying a "Victory" record) so the renderer marks
+    /// it - the per-cell counterpart of the map's cleared-of-total status line.
+    fn cell_status(&self, board: &Board, focus: PileId) -> Vec<(PileId, String)> {
+        if crate::arena::find_arena(board).is_some() {
+            return Vec::new();
+        }
+        let Some(locations) = top_deck(board, "Locations").filter(|&l| l == focus) else {
+            return Vec::new();
+        };
+        let Some(loc) = board.pile(locations) else {
+            return Vec::new();
+        };
+        loc.subpiles()
+            .into_iter()
+            .filter(|&place| place_is_cleared(board, place))
+            .map(|place| (place, "cleared".to_string()))
+            .collect()
+    }
+
     /// While a fight is up, the game draws it as a modal [`Scene`] (the arena); otherwise the felt.
     fn scene(&self, board: &Board, focus: PileId) -> Option<Scene> {
         let mut scene = crate::scene::scene(board, focus)?;
@@ -523,9 +542,24 @@ fn top_deck(board: &Board, label: &str) -> Option<PileId> {
         .find(|&s| board.pile(s).map(|p| p.label.as_str()) == Some(label))
 }
 
+/// Has this place been beaten - does it carry a "Victory" record (left by [`crate::arena::record_outcome`],
+/// which stands the encounter back up so it can be re-fought)?
+fn place_is_cleared(board: &Board, place: PileId) -> bool {
+    board
+        .pile(place)
+        .map(|p| {
+            p.subpiles().into_iter().any(|sp| {
+                board
+                    .pile(sp)
+                    .map(|r| r.label == "Victory")
+                    .unwrap_or(false)
+            })
+        })
+        .unwrap_or(false)
+}
+
 /// `(cleared, total)` across the Locations map: `total` = cells that carry an encounter; `cleared` = those
-/// left with a "Victory" record (a beaten fight leaves one, see `arena::record_outcome`; the encounter itself
-/// stays standing so it can be re-fought).
+/// left with a "Victory" record.
 fn encounters_cleared(board: &Board) -> (usize, usize) {
     let Some(loc) = top_deck(board, "Locations").and_then(|l| board.pile(l)) else {
         return (0, 0);
@@ -533,18 +567,15 @@ fn encounters_cleared(board: &Board) -> (usize, usize) {
     let mut cleared = 0;
     let mut total = 0;
     for place in loc.subpiles() {
-        let Some(p) = board.pile(place) else { continue };
-        if deckbound_content::catalog::encounter_for(&p.label).is_none() {
+        let has_encounter = board
+            .pile(place)
+            .map(|p| deckbound_content::catalog::encounter_for(&p.label).is_some())
+            .unwrap_or(false);
+        if !has_encounter {
             continue; // an empty cell (no roster) is not an encounter
         }
         total += 1;
-        let won = p.subpiles().into_iter().any(|sp| {
-            board
-                .pile(sp)
-                .map(|r| r.label == "Victory")
-                .unwrap_or(false)
-        });
-        if won {
+        if place_is_cleared(board, place) {
             cleared += 1;
         }
     }
@@ -605,6 +636,9 @@ mod tests {
             Some("0 of 9 encounters cleared"),
         );
 
+        // Nothing marked on a fresh map.
+        assert!(game.cell_status(&board, locations).is_empty());
+
         // Beat one cell: a fight leaves a "Victory" record subpile at the place.
         let place = board.pile(locations).unwrap().subpiles()[0];
         board.add_pile(place, "Victory").expect("record pile");
@@ -614,9 +648,17 @@ mod tests {
             Some("1 of 9 encounters cleared"),
         );
 
-        // The readout is map-only.
+        // The beaten cell is now marked "cleared" (and only that cell).
+        assert_eq!(
+            game.cell_status(&board, locations),
+            vec![(place, "cleared".to_string())],
+        );
+
+        // The readouts are map-only.
         assert_eq!(game.status_line(&board, place), None);
         assert_eq!(game.status_line(&board, board.root_id()), None);
+        assert!(game.cell_status(&board, place).is_empty());
+        assert!(game.cell_status(&board, board.root_id()).is_empty());
     }
 
     #[test]
