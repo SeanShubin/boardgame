@@ -73,7 +73,13 @@ pub fn rules_reference_md() -> String {
     out.push_str("# Deckbound — Rules Reference\n\n");
     out.push_str(BANNER);
     out.push_str(
-        "\n\nThe in-game encyclopedia, generated from the Spec's `TERM` definitions and the \
+        "\n\n> **Scope: the `deckbound` reference sample, NOT the shipped card-table product.** This is \
+                  the sample's in-game encyclopedia. The product's combat is the eight-step round \
+                  (Havoc ... Advance) in [`canon/2-spec/combat.md`](../canon/2-spec/combat.md), with its \
+                  card-table realization in [`app-spec/combat.md`](../app-spec/combat.md); terms below that \
+                  describe the sample's separate phase model (Marshal / Reveal / Ready / Engage / Refresh, \
+                  the Intercept ... Breach sub-phases) do not apply to the product.\n\n\
+                  The in-game encyclopedia, generated from the Spec's `TERM` definitions and the \
                   passive powers' card text.\n\n",
     );
 

@@ -170,10 +170,13 @@ always the human's decision, surfaced explicitly — never smuggled in as a
 - **Never** hand-write rules text onto a card.
 - **Never** change a number and a rule in the same breath without telling the
   human you've done both.
-- **Never** answer a design question from memory of the old stance system
-  (Strike / Block / Evade / Scheme, banked momentum). That system is
-  **superseded** (see below). The current tactical core is the **Duel**
-  (Marshal / Unleash / Overwhelm / Parry, per-duel Edge).
+- **Never** answer a design question from memory of a superseded tactical core -
+  the old **stance** system (Strike / Block / Evade / Scheme, banked momentum), the
+  **Duel** (Marshal / Unleash / Overwhelm / Parry), or the RPS **Clash**. All are
+  **superseded** (see below). The current tactical core is the deterministic
+  **Interaction** - `Target -> Bid -> Strike -> Resolve` - resolved inside the
+  **eight-step round** (Havoc ... Advance); it is specified in the Spec's combat
+  chapter, [`canon/2-spec/combat.md`](2-spec/combat.md).
 
 ---
 
@@ -295,19 +298,27 @@ definition.**
 The Spec is **being written** and does not yet cover every system. Until a system
 has a Spec section, treat authority as follows:
 
-- **Tactical core (the Duel):** authoritative design is **`notes/the-duel.md`**
-  plus this Spec's Duel section. The older stance system — **Strike / Block /
-  Evade / Scheme** and **banked momentum** — is **superseded** and must not be
-  used. Notes still describing it (`rulebook.md`, `keywords.md`,
-  `mind-and-stances.md`, and parts of `decision-making.md`,
-  `coordination-and-interruption.md`, `combat.md`, `zones.md`) are **stale on this
-  point**.
+- **Tactical core (the Interaction, in the eight-step round):** authoritative design
+  is the Spec's combat chapter, [`2-spec/combat.md`](2-spec/combat.md) — the
+  deterministic **Interaction** (`Target -> Bid -> Strike -> Resolve`) resolved over
+  the **eight-step round** (Havoc ... Advance). Every earlier tactical core is
+  **superseded and must not be used**: the **stance** system (Strike / Block / Evade /
+  Scheme, banked momentum), the **Duel** (Marshal / Unleash / Overwhelm / Parry), and
+  the RPS **Clash** (the Clash is parked as a deferred pluggable layer,
+  `future-possibilities.md`). Notes still describing any of them (`rulebook.md`,
+  `keywords.md`, `mind-and-stances.md`, `the-duel.md`, and parts of
+  `decision-making.md`, `coordination-and-interruption.md`, `combat.md`, `zones.md`)
+  are **stale on this point**.
 - **Stats / defense model:** **`notes/stats.md`** and **`notes/form-and-defeat.md`**
-  are current (three **channels** — Body / Mind / Spirit; cut → bar → pool; one health track).
-  *(The notes call the channels "aspects"; "aspect" was reserved for the retired combo layer — see `retired-ideas.md`.)*
+  give the shape (cut -> bar -> pool; one health track), but combat now has **one
+  damage channel** — **Might into the health pool** — per the Spec (`2-spec/README.md`
+  §2.2). The old **Mind** and **Fear/Spirit** channels were **collapsed out**, so any
+  note describing a per-channel split (Body / Mind / Spirit) is **stale on that
+  point**. *(The notes also call channels "aspects"; "aspect" is reserved for the
+  retired combo layer — see `retired-ideas.md`.)*
 - **Everything else:** trust `booklet.ron` for components/numbers and the
-  most-recently-reconciled note for shape — but if it predates the Duel switch and
-  touches the tactical layer, **distrust it** and ask.
+  most-recently-reconciled note for shape — but if it predates the combat-chapter
+  switch (2026-07) and touches the tactical layer, **distrust it** and ask.
 
 When in doubt, the safe answer is always: **the Spec if it exists, else the
 Charter for intent and `booklet.ron` for pieces — and ask the human for the rest.**

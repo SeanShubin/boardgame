@@ -3,6 +3,8 @@
 > **GENERATED — do not edit.** Regenerate with `cargo run -p deckbound --example handbook`.
 > A projection of `crates/deckbound/data/booklet.ron` (the print master) and the Spec.
 
+> **Scope: the `deckbound` reference sample, NOT the shipped card-table product.** This is the sample's in-game encyclopedia. The product's combat is the eight-step round (Havoc ... Advance) in [`canon/2-spec/combat.md`](../canon/2-spec/combat.md), with its card-table realization in [`app-spec/combat.md`](../app-spec/combat.md); terms below that describe the sample's separate phase model (Marshal / Reveal / Ready / Engage / Refresh, the Intercept ... Breach sub-phases) do not apply to the product.
+
 The in-game encyclopedia, generated from the Spec's `TERM` definitions and the passive powers' card text.
 
 ## Roles

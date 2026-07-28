@@ -14,8 +14,8 @@
 
 The Rules spec's four minor steps are `Target / Bid / Strike / Resolve`. This app
 renames the **Bid** step **Catch** everywhere the player reads (tiles, the log, the
-Interaction reference) - "catch" pairs with the defender's "slip" and matches the
-codebase's own `foe_catch` / "catcher". Internal identifiers stay `bid` / `reach`.
+Interaction track, the standing reference card) - "catch" pairs with the defender's
+"slip" and matches the codebase's own `foe_catch` / "catcher". Internal identifiers stay `bid` / `reach`.
 "Pour" is retired: the extra blows are just **strikes** ("+N strikes"). So the player
 sees `Target / Catch / Strike / Resolve`; the log prefixes are `target / catch /
 strike / resolve` (plus `move`).
@@ -94,6 +94,20 @@ at its exact `(catch, strikes)`; lit enemy tiles carry their outlook while aimin
   *Interaction* - the four minor steps `Target / Catch / Strike / Resolve`, the live
   beat lit (Target while aiming, Catch while picking the reach, Strike while picking
   the count; Resolve is automatic). (`scene.rs::build_tracks`.)
+- **The step prompt names the move and its one binding rule.** Under the round/step
+  locator, one line says the move to make *and* the single constraint or cost that
+  decides whether it is worth it - a bar (a Skirmish strike forfeits your crossing),
+  a price (a crosser takes the volley next), a one-way (a volley is never answered),
+  an evade (a raid may be dodged). Matter-of-fact: what is legal and what it costs,
+  never how to play it. (`scene.rs::prompt_for`.)
+- **A standing rules reference in the sidebar.** Under the stat legend sits the whole
+  round at a glance: each step's `who -> whom` plus its one deciding fact, then the
+  cross-cutting rules a step line cannot carry (melee answers back / ranged is
+  one-way; tempo is one pool for strike or dodge, refilling to Cadence each round as
+  wounds close; the four beats of every strike). So a player can plan forward, not
+  only react to the lit step. (`targets::schedule_card`, rendered by
+  `cardtable::spawn_legend_panel`.) It is the presentation face of the Rules spec's
+  own schedule - no rule the Rules spec does not already state.
 - **Tile badges show raw damage, not cards flipped.** A Catch/Strike tile reads
   `N dmg` (or `slipped`), the blows-times-Might this choice banks. Damage - not
   Health-cards-flipped - is the honest per-attacker number, because the Grit pile is
