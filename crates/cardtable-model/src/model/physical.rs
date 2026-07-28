@@ -1360,6 +1360,101 @@ impl Board {
         Ok(())
     }
 
+    // --- Reconcile primitives (pub(super): the load-time seam in `model::reconcile`) -----------------
+    // Narrow mutations reconciliation needs that no play behavior provides. Each conserves the physical
+    // sum (PC.2) or touches only presentation state; none is part of the play API.
+
+    /// Set which hero card `pile` is a **character deck** for (see [`Pile::reflects`]) — normally only
+    /// [`equip_character`](Board::equip_character) writes this; reconcile re-links a loaded character
+    /// deck to the re-minted hero card, whose id differs from the saved one.
+    pub(super) fn set_reflects(
+        &mut self,
+        pile: PileId,
+        reflects: Option<CardId>,
+    ) -> Result<(), TableauError> {
+        self.piles
+            .get_mut(&pile)
+            .ok_or(TableauError::UnknownPile(pile))?
+            .reflects = reflects;
+        Ok(())
+    }
+
+    /// Split `take` off a stack into a **full-fidelity twin** (face, type, detail, panel, kind, recipe —
+    /// unlike a bank draw, which copies only what a bank card carries) appended to the same pile; the
+    /// source keeps the rest. The sum of quantities is conserved (PC.2). `take >= quantity` splits
+    /// nothing and returns the card itself.
+    pub(super) fn split_off(&mut self, card: CardId, take: u32) -> Result<CardId, TableauError> {
+        let src = self
+            .cards
+            .get(&card)
+            .ok_or(TableauError::UnknownCard(card))?;
+        let take = take.max(1);
+        if take >= src.quantity() {
+            return Ok(card);
+        }
+        let home = src.home;
+        let mut twin = src.clone();
+        self.cards.get_mut(&card).expect("checked above").quantity -= take;
+        let id = CardId(self.next_card);
+        self.next_card += 1;
+        twin.id = id;
+        twin.quantity = take;
+        self.cards.insert(id, twin);
+        self.piles
+            .get_mut(&home)
+            .expect("home invariant: the source's pile exists")
+            .children
+            .push(Node::Card(id));
+        Ok(id)
+    }
+
+    /// Set a card's render [`Size`] directly, **clamped to what its content supports** (Medium needs
+    /// detail, Large needs a panel — the invariant [`cycle_card_size`](Board::cycle_card_size)
+    /// maintains). For restoring a saved size onto a card whose content may have changed underneath it.
+    pub(super) fn set_size_clamped(
+        &mut self,
+        card: CardId,
+        size: Size,
+    ) -> Result<(), TableauError> {
+        let c = self
+            .cards
+            .get_mut(&card)
+            .ok_or(TableauError::UnknownCard(card))?;
+        c.size = match size {
+            Size::Large if !c.panel.is_empty() => Size::Large,
+            Size::Large | Size::Medium if !c.detail.is_empty() => Size::Medium,
+            _ => Size::Small,
+        };
+        Ok(())
+    }
+
+    /// Permute `pile`'s children into `order` — which must be exactly the current children, each once
+    /// (a permutation); otherwise [`TableauError::InvalidMove`] and no change. Reordering only: no card
+    /// or pile enters or leaves the pile.
+    pub(super) fn set_child_order(
+        &mut self,
+        pile: PileId,
+        order: Vec<Node>,
+    ) -> Result<(), TableauError> {
+        let p = self
+            .piles
+            .get_mut(&pile)
+            .ok_or(TableauError::UnknownPile(pile))?;
+        let sort_key = |n: &Node| match *n {
+            Node::Card(CardId(id)) => (0u8, id),
+            Node::Pile(PileId(id)) => (1u8, id),
+        };
+        let mut have: Vec<Node> = p.children.clone();
+        let mut want: Vec<Node> = order.clone();
+        have.sort_by_key(sort_key);
+        want.sort_by_key(sort_key);
+        if have != want {
+            return Err(TableauError::InvalidMove);
+        }
+        p.children = order;
+        Ok(())
+    }
+
     // --- The day clock (spec `physical-cards.md` PC.5) ------------------------------------------------
     // **Progress** is the day clock: a `Day Passed ×N` **count** stack (type `event`; its quantity is the
     // current day) plus one face-up `hero` **move marker** per active character (face-up = hasn't moved
