@@ -196,6 +196,114 @@ const INTERACTION: [(&str, &[&str]); 4] = [
     ),
 ];
 
+/// The three **ranks** a body can hold in a round - the vocabulary every phase card is written in (the whole
+/// schedule is `V`/`O`/`R`). From the combat spec's Terminology. Each detail string is one rendered line (see
+/// [`PHASE_BLURB`]), short enough to fit a Medium card's width.
+const RANKS: [(&str, &[&str]); 3] = [
+    (
+        "Vanguard",
+        &[
+            "Front rank, melee.",
+            "The shield: while it",
+            "stands, its rearguard",
+            "is safe but for a raid.",
+        ],
+    ),
+    (
+        "Outrider",
+        &[
+            "Loose inside the enemy,",
+            "having crossed in.",
+            "Hits hard, but is exposed",
+            "to their whole line.",
+        ],
+    ),
+    (
+        "Rearguard",
+        &[
+            "Back rank, ranged fire.",
+            "Screened while its own",
+            "vanguard stands; its",
+            "shots go unanswered.",
+        ],
+    ),
+];
+
+/// The five **stats** every body carries - referenced all over the phase and Interaction cards ("at Might
+/// each", "one card per Grit", "tempo at Finesse") but defined nowhere else in the deck. Faithful to
+/// [`catalog::STATS`], re-wrapped to short card lines.
+const STAT_RULES: [(&str, &[&str]); 5] = [
+    (
+        "Might",
+        &[
+            "Force behind a strike.",
+            "Sets the damage each",
+            "blow deals.",
+        ],
+    ),
+    (
+        "Vitality",
+        &[
+            "Your life. With Grit it",
+            "sets your Health - how",
+            "much you take before",
+            "you fall.",
+        ],
+    ),
+    (
+        "Grit",
+        &[
+            "How tough each Health",
+            "card is. Damage piles;",
+            "at your Grit, one turns.",
+            "Unfinished piles reset.",
+        ],
+    ),
+    ("Cadence", &["How many Tempo cards", "you get each round."]),
+    (
+        "Finesse",
+        &[
+            "Strength of each Tempo",
+            "card: what it is worth",
+            "to reach a foe or slip",
+            "one. Never damage.",
+        ],
+    ),
+];
+
+/// The two **pools** the stats become, and how a round closes - the resource model the whole schedule spends.
+/// `Health` = Vitality x Grit; `Tempo` = Cadence x Finesse, one pool for offence AND defence. The third card
+/// states round end and the win condition.
+const POOLS_RULES: [(&str, &[&str]); 3] = [
+    (
+        "Health",
+        &[
+            "Vitality cards, each",
+            "Grit strong. Damage flips",
+            "one per Grit; empty,",
+            "and the body is down.",
+        ],
+    ),
+    (
+        "Tempo",
+        &[
+            "Cadence cards, each",
+            "Finesse strong. One pool",
+            "for strike AND dodge.",
+            "Refills each round.",
+        ],
+    ),
+    (
+        "Round end",
+        &[
+            "Tempo refills, unfinished",
+            "wounds close, Health",
+            "carries over. Win by",
+            "felling every foe.",
+        ],
+    ),
+];
+
 /// Lay a **Free** deck's content out in a tidy grid so the very first render is clean. A freely-placed
 /// zone shares the felt with the floating overlays (title / Back), so the seed **leaves the top row
 /// empty** — content starts one row down, clear of them on first render — while that row stays felt: the
@@ -233,6 +341,41 @@ fn grid_layout(tree: &mut Board, deck: PileId, cols: usize) {
             }
         }
     }
+}
+
+/// Build a drill-in **reference sub-deck** inside the Rules deck: one card per `(name, detail)` entry, topped
+/// by a `label`-named Zone card carrying `label_detail`, laid out tidy in `cols`. These are the glossary decks
+/// (Ranks / Stats / Pools) that define the vocabulary the phase and Interaction cards lean on, so a browsing
+/// player can open any term. Mirrors the inline Interaction sub-deck; each detail string is one rendered line
+/// (see [`PHASE_BLURB`]).
+fn reference_subdeck(
+    tree: &mut Board,
+    parent: PileId,
+    label: &str,
+    label_detail: &[&str],
+    entries: &[(&str, &[&str])],
+    cols: usize,
+) {
+    let sub = tree.add_pile(parent, label).expect("parent exists");
+    for &(name, detail) in entries {
+        let id = typed(tree, sub, name, "phase");
+        tree.set_card_detail(id, detail.iter().map(|l| l.to_string()).collect())
+            .expect("reference card just added");
+    }
+    let zone = typed(tree, sub, label, "phase");
+    tree.set_card_kind(zone, CardKind::Zone)
+        .expect("reference label just added");
+    tree.set_card_detail(zone, label_detail.iter().map(|l| l.to_string()).collect())
+        .expect("reference label just added");
+    grid_layout(tree, sub, cols);
+    tree.set_layout(
+        sub,
+        Layout {
+            arrangement: Arrangement::Free,
+            editable: true,
+        },
+    )
+    .expect("reference deck exists");
 }
 
 /// A small, representative table for the card-table game: a **Heroes** deck (the reserve the party's cards
@@ -428,17 +571,36 @@ pub fn sample_table() -> Board {
     )
     .expect("locations exists");
 
-    // A "Rules" deck: the round's EIGHT phases as leaf cards - names and order straight from the engine's
-    // `STEPS` / `step_coord`, so the deck can only ever name a phase the machine actually runs - plus an
-    // "Interaction" sub-deck for the four minor steps every strike runs INSIDE any phase (Target -> Bid ->
-    // Strike -> Resolve). A Free deck (expanding a card shoves neighbours clear), seeded tidy.
+    // A "Rules" deck: a drill-in sub-deck per topic, no loose cards. The two SCHEDULES come first - the
+    // round's eight "Phases" and the per-strike "Interaction" (Target -> Bid -> Strike -> Resolve) - then the
+    // glossary (Ranks / Stats / Pools). A Free deck (expanding a card shoves neighbours clear), seeded tidy.
     let rules = tree.add_pile(root, "Rules").expect("root exists");
+    // The eight phases in their OWN sub-deck (a schedule) - names and order straight from the engine's
+    // `STEPS` / `step_coord`, so the deck can only ever name a phase the machine actually runs.
+    let phases = tree.add_pile(rules, "Phases").expect("rules exists");
     for (s, blurb) in STEPS.into_iter().zip(PHASE_BLURB) {
         let (k, name) = step_coord(s);
-        let id = typed(&mut tree, rules, &format!("{k}. {name}"), "phase");
+        let id = typed(&mut tree, phases, &format!("{k}. {name}"), "phase");
         tree.set_card_detail(id, blurb.iter().map(|l| l.to_string()).collect())
             .expect("phase card");
     }
+    let phases_zone = typed(&mut tree, phases, "Phases", "phase");
+    tree.set_card_kind(phases_zone, CardKind::Zone)
+        .expect("phases label");
+    tree.set_card_detail(
+        phases_zone,
+        vec!["The eight steps of a".into(), "round, in order.".into()],
+    )
+    .expect("phases detail");
+    grid_layout(&mut tree, phases, 3);
+    tree.set_layout(
+        phases,
+        Layout {
+            arrangement: Arrangement::Free,
+            editable: true,
+        },
+    )
+    .expect("phases exists");
     // The Interaction: drill in to see the four minor steps a single strike runs, in any phase.
     let interaction = tree.add_pile(rules, "Interaction").expect("rules exists");
     for (i, &(name, detail)) in INTERACTION.iter().enumerate() {
@@ -471,6 +633,34 @@ pub fn sample_table() -> Board {
         },
     )
     .expect("interaction exists");
+    // The glossary sub-decks: the vocabulary every phase and Interaction card leans on. Drill in for the three
+    // ranks, the five stats, and the two pools (plus round end / win) - so the Rules deck explains the whole
+    // game, not only the schedule. The two schedules (the eight phases, and the Interaction) stay the leaves
+    // and first sub-deck; these follow as reference.
+    reference_subdeck(
+        &mut tree,
+        rules,
+        "Ranks",
+        &["The three positions a", "body takes each round."],
+        &RANKS,
+        2,
+    );
+    reference_subdeck(
+        &mut tree,
+        rules,
+        "Stats",
+        &["The five numbers", "every body carries."],
+        &STAT_RULES,
+        2,
+    );
+    reference_subdeck(
+        &mut tree,
+        rules,
+        "Pools",
+        &["Your two resources,", "and how a round ends."],
+        &POOLS_RULES,
+        2,
+    );
     let rules_zone = typed(&mut tree, rules, "Rules", "Label");
     tree.set_card_kind(rules_zone, CardKind::Zone)
         .expect("rules zone card");
@@ -637,7 +827,9 @@ mod tests {
         //   Stats     5 names x5 copies + a label
         //   Numbers   9 digits x12 copies + a label
         //   Locations a Zone card + 9 place names + 9 encounter headers + 9 Rumors (app-only readouts)
-        //   Rules     8 leaf phases + a label, and the Interaction sub-deck's 4 + a label
+        //   Rules     a Zone label, over five drill-in sub-decks (each with its own label): Phases (8 + a
+        //             label), Interaction (4 + a label), Ranks (3 + a label), Stats (5 + a label), Pools
+        //             (3 + a label)
         //   Progress  a Zone label (Day 0; the 4 move markers came out of Heroes)
         //   Events    the Day Passed x12 reserve + a label
         //   Bestiary  6 creature `foe` stacks x4 + a label
@@ -648,7 +840,7 @@ mod tests {
                 + (5 * 5 + 1)
                 + (9 * 12 + 1)
                 + (1 + 9 + 9 + 9)
-                + ((8 + 1) + (4 + 1))
+                + (1 + (8 + 1) + (4 + 1) + (3 + 1) + (5 + 1) + (3 + 1))
                 + 1
                 + (12 + 1)
                 + (6 * 4 + 1)
@@ -1190,19 +1382,28 @@ mod tests {
         assert_eq!(back.card_count(), t.card_count());
         let subs = |t: &Board| t.pile(t.root_id()).unwrap().subpiles().len();
         assert_eq!(subs(&back), subs(&t));
-        // A known card comes back intact.
+        // A known card comes back intact: the first phase, now inside the Rules deck's "Phases" sub-deck.
         let root = t.pile(t.root_id()).unwrap();
         let rules_id = *root
             .subpiles()
             .iter()
             .find(|&&id| t.pile(id).unwrap().label == "Rules")
             .unwrap();
-        let first = t.content_cards(rules_id)[0];
+        let phases_id = *t
+            .pile(rules_id)
+            .unwrap()
+            .subpiles()
+            .iter()
+            .find(|&&id| t.pile(id).unwrap().label == "Phases")
+            .unwrap();
+        let first = t.content_cards(phases_id)[0];
         assert_eq!(back.card(first).unwrap().name(), "1. Havoc");
     }
 
-    /// The Rules deck names the round's **eight phases** (in `STEPS` order, so it can never drift from the
-    /// engine) as leaf cards, plus an **Interaction** sub-deck for the four minor steps every strike runs.
+    /// The Rules deck is a drill-in sub-deck per topic (no loose cards). Two are SCHEDULES - the round's eight
+    /// **Phases** (in `STEPS` order, so it can never drift from the engine) and the per-strike **Interaction**
+    /// - and three are the **Ranks / Stats / Pools** glossary that defines the vocabulary the phase cards are
+    /// written in, so the deck explains the whole game, not only the schedule.
     #[test]
     fn rules_deck_names_the_eight_phases_and_the_interaction() {
         let t = sample_table();
@@ -1217,12 +1418,34 @@ mod tests {
             )
             .unwrap();
 
-        // Eight leaf phases as content cards - named and ordered straight from the engine's schedule.
-        let leaves: Vec<String> = t
-            .content_cards(rules.id)
-            .iter()
-            .map(|&c| t.card(c).unwrap().name().to_string())
-            .collect();
+        // The Rules deck holds NO loose cards now - only its own Zone label, over five drill-in sub-decks. Each
+        // sub-deck is named by its Zone label (added last) and holds its content cards in order.
+        let subdeck = |label: &str| -> (Vec<String>, String) {
+            let id = *rules
+                .subpiles()
+                .iter()
+                .find(|&&p| t.pile(p).unwrap().label == label)
+                .unwrap_or_else(|| panic!("the Rules deck is missing the {label} sub-deck"));
+            let content = t
+                .content_cards(id)
+                .iter()
+                .map(|&c| t.card(c).unwrap().name().to_string())
+                .collect();
+            let zone = t
+                .card(*t.pile(id).unwrap().cards().last().unwrap())
+                .unwrap()
+                .name()
+                .to_string();
+            (content, zone)
+        };
+        assert!(
+            t.content_cards(rules.id).is_empty(),
+            "the Rules deck holds only sub-decks, no loose cards"
+        );
+        assert_eq!(rules.subpiles().len(), 5);
+
+        // The two schedules. The Phases sub-deck names the eight steps, ordered straight from the engine.
+        let (phases, phases_label) = subdeck("Phases");
         let want: Vec<String> = STEPS
             .into_iter()
             .map(|s| {
@@ -1230,25 +1453,23 @@ mod tests {
                 format!("{k}. {name}")
             })
             .collect();
-        assert_eq!(leaves, want, "the deck's phases are the engine's STEPS");
+        assert_eq!(phases, want, "the Phases sub-deck is the engine's STEPS");
+        assert_eq!(phases_label, "Phases");
 
-        // The Interaction sub-deck: the four minor steps a single strike runs, plus its own label.
-        assert_eq!(rules.subpiles().len(), 1);
-        let interaction = t.pile(rules.subpiles()[0]).unwrap();
-        assert_eq!(interaction.label, "Interaction");
-        let children: Vec<&str> = t
-            .content_cards(interaction.id)
-            .iter()
-            .map(|&c| t.card(c).unwrap().name())
-            .collect();
+        let (interaction, label) = subdeck("Interaction");
         assert_eq!(
-            children,
+            interaction,
             ["1. Target", "2. Catch", "3. Strike", "4. Resolve"]
         );
+        assert_eq!(label, "Interaction");
+
+        // The glossary: ranks, stats, and pools - so the deck defines every term the schedule uses.
+        assert_eq!(subdeck("Ranks").0, ["Vanguard", "Outrider", "Rearguard"]);
         assert_eq!(
-            t.card(*interaction.cards().last().unwrap()).unwrap().name(),
-            "Interaction"
+            subdeck("Stats").0,
+            ["Might", "Vitality", "Grit", "Cadence", "Finesse"]
         );
+        assert_eq!(subdeck("Pools").0, ["Health", "Tempo", "Round end"]);
 
         // Topped by a "Rules" Zone label.
         let top = t.card(*rules.cards().last().unwrap()).unwrap();
