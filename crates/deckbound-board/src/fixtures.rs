@@ -112,57 +112,41 @@ const LOCATIONS: [&str; 9] = [
 
 /// A short summary for each of the round's eight phases, **aligned to [`STEPS`]** order. The phase NAMES and
 /// ORDER come from the engine (`step_game::STEPS` / `step_coord`), so the Rules deck can only ever name a
-/// phase the machine actually runs; only this prose lives here. Each string is **one line as authored**;
-/// the Medium card renders detail lines with **word-wrap and grows its height to fit** (see
-/// `spawn_card_medium`), so a long line stays readable but wraps untidily - keep each line short (roughly a
-/// Medium card's width) and let a multi-line summary be a slice of short lines. Adding lines just makes the
-/// card taller; it never clips.
+/// phase the machine actually runs; only this prose lives here. Each string is **one self-contained clause or
+/// sentence**: the Medium card renders each as its own paragraph, **word-wrapping it to the card width and
+/// growing to fit** (see `spawn_card_medium`). So break entries only at a natural boundary (a sentence, or a
+/// clause ending in punctuation), **never mid-phrase** - a hard break inside a phrase strands the next word on
+/// its own row even when it would have fit. A long sentence is fine as one entry; it wraps cleanly. Adding
+/// entries just makes the card taller; nothing ever clips.
 const PHASE_BLURB: [&[&str]; 8] = [
     // 1 Havoc
     &[
-        "Point-blank in-region.",
-        "Outriders aim one tier;",
-        "their hosts strike back.",
+        "Point-blank, in-region.",
+        "Outriders aim one tier, and their hosts strike back.",
     ],
     // 2 Withdraw
-    &["An outrider may rejoin", "its own line, free."],
+    &["An outrider may rejoin its own line, free."],
     // 3 Skirmish
     &[
-        "The early front trade,",
-        "vanguard vs vanguard.",
-        "A line strike bars",
-        "your own crossing.",
+        "The early front trade, vanguard vs vanguard.",
+        "A line strike here bars your own crossing.",
     ],
     // 4 Crossing
-    &[
-        "A vanguard that did not",
-        "strike may cross into",
-        "their line as an outrider.",
-    ],
+    &["A vanguard that did not strike may cross into their line as an outrider."],
     // 5 Defensive Volley
     &[
-        "Rearguards fire on enemy",
-        "outriders in their zone.",
-        "One-way, opening blow.",
+        "Rearguards fire on enemy outriders in their zone.",
+        "One-way, the opening blow only.",
     ],
     // 6 Raid
     &[
-        "This round's arrivals",
-        "strike a back-line target.",
-        "One blow; it may dodge.",
+        "This round's arrivals strike a back-line target.",
+        "One blow, and it may dodge.",
     ],
     // 7 Assault
-    &[
-        "All firepower to bear:",
-        "rearguard fire, and every",
-        "vanguard that held back.",
-    ],
+    &["All firepower to bear: rearguard fire, and every vanguard that held back."],
     // 8 Advance
-    &[
-        "Reach an enemy rearguard",
-        "only when its vanguard is",
-        "already gone this step.",
-    ],
+    &["Reach an enemy rearguard only when its vanguard is already gone this step."],
 ];
 
 /// The four minor steps every strike runs, inside any phase - the **Interaction**. The Rules deck renders
@@ -171,36 +155,30 @@ const PHASE_BLURB: [&[&str]; 8] = [
 const INTERACTION: [(&str, &[&str]); 4] = [
     (
         "Target",
-        &["Name whom you strike,", "or pass to keep your tempo."],
+        &["Name whom you strike, or pass to keep your tempo."],
     ),
     (
         "Catch",
         &[
-            "Spend tempo to reach the",
-            "target. Reach = tempo x",
-            "Finesse - the same for your",
-            "catch and their dodge.",
-            "They dodge only with MORE",
-            "reach; a tie lands the hit.",
+            "Spend tempo to reach the target.",
+            "Reach = tempo x Finesse, the same for your catch and their dodge.",
+            "They dodge only with greater reach; a tie lands the hit.",
         ],
     ),
     (
         "Strike",
         &[
-            "The catch's reach lands the",
-            "first blow. Each extra blow",
-            "costs 1 more tempo.",
+            "The catch's reach lands the first blow.",
+            "Each extra blow costs 1 more tempo.",
             "Every blow deals Might.",
         ],
     ),
     (
         "Resolve",
         &[
-            "Each Health card soaks Grit",
-            "damage, then flips.",
+            "Each Health card soaks Grit damage, then flips.",
             "Any excess is discarded.",
-            "Empty every card and the",
-            "body is down.",
+            "Empty every card and the body is down.",
         ],
     ),
 ];
@@ -212,28 +190,22 @@ const RANKS: [(&str, &[&str]); 3] = [
     (
         "Vanguard",
         &[
-            "Front rank, melee.",
-            "The shield: while it",
-            "stands, its rearguard",
-            "is safe but for a raid.",
+            "Front rank, fights in melee.",
+            "While a vanguard stands it shields its own rearguard; only a raid reaches past.",
         ],
     ),
     (
         "Outrider",
         &[
-            "Crossed into the enemy to",
-            "raid their rearguard.",
-            "Hits hard, but is exposed",
-            "to their whole line at once.",
+            "Crossed into the enemy to raid their rearguard.",
+            "Hits hard, but is exposed to their whole line at once.",
         ],
     ),
     (
         "Rearguard",
         &[
-            "Back rank, ranged fire.",
-            "Screened while its own",
-            "vanguard stands; its shots",
-            "cannot be struck back at.",
+            "Back rank, fires at range.",
+            "Screened while its own vanguard stands, and its shots cannot be struck back at.",
         ],
     ),
 ];
@@ -244,38 +216,25 @@ const RANKS: [(&str, &[&str]); 3] = [
 const STAT_RULES: [(&str, &[&str]); 5] = [
     (
         "Might",
-        &[
-            "Force behind a strike.",
-            "Sets the damage each",
-            "blow deals.",
-        ],
+        &["Force behind a strike; sets the damage each blow deals."],
     ),
     (
         "Vitality",
-        &[
-            "Your life. With Grit it",
-            "sets your Health - how",
-            "much you take before",
-            "you fall.",
-        ],
+        &["Your life. With Grit it sets your Health - how much you take before you fall."],
     ),
     (
         "Grit",
         &[
-            "How tough each Health card",
-            "is. Damage piles up; each",
-            "Grit banked flips one card,",
-            "and the rest is discarded.",
+            "How tough each Health card is.",
+            "Damage piles up; each Grit banked flips one card, and the rest is discarded.",
         ],
     ),
-    ("Cadence", &["How many Tempo cards", "you get each round."]),
+    ("Cadence", &["How many Tempo cards you get each round."]),
     (
         "Finesse",
         &[
-            "Strength of each Tempo",
-            "card: what it is worth",
-            "to reach a foe or slip",
-            "one. Never damage.",
+            "Strength of each Tempo card - what it is worth to reach a foe or slip one.",
+            "It never touches damage.",
         ],
     ),
 ];
@@ -287,28 +246,22 @@ const POOLS_RULES: [(&str, &[&str]); 3] = [
     (
         "Health",
         &[
-            "Vitality cards, each",
-            "Grit strong. Damage flips",
-            "one per Grit; empty,",
-            "and the body is down.",
+            "Vitality cards, each Grit strong.",
+            "Damage flips one per Grit; empty every card and the body is down.",
         ],
     ),
     (
         "Tempo",
         &[
-            "Cadence cards, each",
-            "Finesse strong. One pool",
-            "for strike AND dodge.",
-            "Refills each round.",
+            "Cadence cards, each Finesse strong.",
+            "One pool for both striking and dodging; it refills each round.",
         ],
     ),
     (
         "Round end",
         &[
-            "Tempo refills, unfinished",
-            "wounds close, Health",
-            "carries over. Win by",
-            "felling every foe.",
+            "Tempo refills and unfinished wounds close; Health carries over.",
+            "Win by felling every foe.",
         ],
     ),
 ];
