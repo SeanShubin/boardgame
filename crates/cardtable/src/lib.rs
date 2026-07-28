@@ -2368,204 +2368,227 @@ fn draw_scene(commands: &mut Commands, scene: &Scene, affordances: &[String], ca
             Node {
                 width: Val::Percent(100.0),
                 height: Val::Percent(100.0),
-                // The whole screen is a COLUMN: the board area on top, the combat log full-width below it.
-                flex_direction: FlexDirection::Column,
+                // The whole screen is a ROW: the sidebar (standing cards) on the left, then a column on the
+                // right holding the board on top and the combat log filling the space beneath it. The log sits
+                // BESIDE the tall sidebar, not below it, so however tall the sidebar grows it never squeezes
+                // the log - which is why the log gets the whole wide right region instead of a bottom strip.
+                flex_direction: FlexDirection::Row,
                 align_items: AlignItems::Stretch,
                 ..default()
             },
             BackgroundColor(FELT),
         ))
         .with_children(|root| {
-            // TOP: the sidebar (Step over Stats) beside the main board column - the must-see block. It is
-            // RESERVED FIRST and never yields: `flex-shrink: 0`, so it keeps its natural height and the log
-            // below absorbs all the space pressure. (Priority: the hero/foe tiles, choices and buttons must
-            // never be clipped; the step + stats sit with them; the log gives.)
-            root.spawn(Node {
-                width: Val::Percent(100.0),
-                flex_grow: 0.0,
-                flex_shrink: 0.0,
-                flex_direction: FlexDirection::Row,
-                align_items: AlignItems::FlexStart,
-                ..default()
-            })
-            .with_children(|top| {
-                // Left sidebar: the Step track (A), then the Stats legend (B) under it.
-                top.spawn((
-                    SceneRegion("sidebar"),
-                    Node {
-                        flex_direction: FlexDirection::Column,
-                        align_items: AlignItems::FlexStart,
-                        padding: UiRect::all(SCREEN_MARGIN),
-                        row_gap: Val::Px(10.0),
-                        ..default()
-                    },
-                ))
-                .with_children(|side| {
-                    for track in &scene.tracks {
-                        let labels: Vec<&str> =
-                            track.items.iter().map(|i| i.label.as_str()).collect();
-                        let current = track
-                            .items
-                            .iter()
-                            .find(|i| i.current)
-                            .map(|i| i.label.as_str())
-                            .unwrap_or("");
-                        spawn_track(side, &track.title, &labels, current);
-                    }
-                    if !scene.legend.is_empty() {
-                        spawn_legend_panel(side, &scene.legend, None);
-                    }
-                });
+            // LEFT: the sidebar - the Step track (A), the Stats legend (B), then the standing rules reference.
+            // The must-see reference block. `flex-shrink: 0` keeps its width; `align-items: FlexStart` lets it
+            // take its natural height at the top rather than stretching. The log now lives in the right column
+            // beside it, not below it, so however tall this grows it no longer steals the log's space.
+            root.spawn((
+                SceneRegion("sidebar"),
+                Node {
+                    flex_direction: FlexDirection::Column,
+                    align_items: AlignItems::FlexStart,
+                    align_self: AlignSelf::FlexStart,
+                    flex_shrink: 0.0,
+                    padding: UiRect::all(SCREEN_MARGIN),
+                    row_gap: Val::Px(10.0),
+                    ..default()
+                },
+            ))
+            .with_children(|side| {
+                for track in &scene.tracks {
+                    let labels: Vec<&str> = track.items.iter().map(|i| i.label.as_str()).collect();
+                    let current = track
+                        .items
+                        .iter()
+                        .find(|i| i.current)
+                        .map(|i| i.label.as_str())
+                        .unwrap_or("");
+                    spawn_track(side, &track.title, &labels, current);
+                }
+                if !scene.legend.is_empty() {
+                    spawn_legend_panel(side, &scene.legend, None);
+                }
+                // The standing rules reference, under the legend: the whole round at a glance, so a
+                // player can plan forward instead of only reacting to the lit step. Same panel shape as
+                // the legend (un-indented lines are headers, leading-space lines are entries).
+                if !scene.reference.is_empty() {
+                    spawn_legend_panel(side, &scene.reference, None);
+                }
+            });
 
-                // Main column: heading, prompt (which names the current step), then the board (C) + the decision.
-                top.spawn((
-                    SceneRegion("main"),
-                    Node {
-                        flex_grow: 1.0,
-                        min_width: Val::Px(0.0),
-                        flex_direction: FlexDirection::Column,
-                        align_items: AlignItems::Center,
-                        padding: UiRect::all(SCREEN_MARGIN),
-                        row_gap: Val::Px(8.0),
-                        ..default()
-                    },
-                ))
-                .with_children(|main| {
-                    if !scene.heading.is_empty() {
-                        main.spawn((
-                            Text::new(scene.heading.clone()),
-                            TextFont {
-                                font_size: FONT_HEAD,
-                                ..default()
-                            },
-                            TextColor(INK),
-                        ));
-                    }
-                    if !scene.prompt.is_empty() {
-                        spawn_prompt_line(main, &scene.prompt);
-                    }
-                    // The body is the hero/foe tiles - PRIORITY 1, never clipped. It takes its natural height
-                    // and does NOT shrink (`flex-shrink: 0`); the log below is the region that yields, so the
-                    // rearguard row can never be squeezed out by a long log the way it was when the body
-                    // carried the shrink.
-                    main.spawn((
-                        SceneRegion("body"),
+            // RIGHT: a column filling the rest of the width - the board block on top, the combat log filling
+            // everything beneath it. `flex-grow: 1` claims all the width the sidebar left; the log child inside
+            // then claims all the leftover HEIGHT, so it grows into the wide-open right region instead of a
+            // thin bottom strip.
+            root.spawn((
+                SceneRegion("right"),
+                Node {
+                    flex_grow: 1.0,
+                    min_width: Val::Px(0.0),
+                    flex_direction: FlexDirection::Column,
+                    align_items: AlignItems::Stretch,
+                    ..default()
+                },
+            ))
+            .with_children(|right| {
+                // Main block: heading, prompt (which names the current step), then the board + the decision.
+                // Natural height (flex-grow 0), so the log below takes the remaining vertical space.
+                right
+                    .spawn((
+                        SceneRegion("main"),
                         Node {
                             width: Val::Percent(100.0),
                             flex_grow: 0.0,
                             flex_shrink: 0.0,
                             flex_direction: FlexDirection::Column,
                             align_items: AlignItems::Center,
-                            justify_content: JustifyContent::FlexStart,
+                            padding: UiRect::all(SCREEN_MARGIN),
                             row_gap: Val::Px(8.0),
                             ..default()
                         },
                     ))
-                    .with_children(|mid| match &scene.body {
-                        SceneBody::Rows(rows) => draw_scene_rows(mid, rows),
-                        SceneBody::Lanes(lanes) => draw_scene_lanes(mid, lanes),
-                    });
-
-                    // **The decision, then the controls**, under the board. The log that these are *about* now
-                    // stands in the sidebar (left), read alongside the board rather than below the choices; the
-                    // controls sit with the choices because Commit is the last step of the same thought.
-                    main.spawn((
-                        SceneRegion("decision"),
-                        Node {
-                            width: Val::Percent(100.0),
-                            flex_shrink: 0.0,
-                            flex_direction: FlexDirection::Column,
-                            align_items: AlignItems::Center,
-                            row_gap: Val::Px(8.0),
-                            ..default()
-                        },
-                    ))
-                    .with_children(|panel| {
-                        // The log now lives in the sidebar (left); here remain the decision and its controls.
-                        // The decision is drawn as tracked card tiles (they ring, they anchor arrows, they tap
-                        // through `tap_intention`); the older button-rail `choices` path stays for any game
-                        // that still uses it, but the arena speaks in `actions` now.
-                        if !scene.actions.is_empty() {
-                            spawn_action_strip(panel, &scene.actions);
+                    .with_children(|main| {
+                        if !scene.heading.is_empty() {
+                            main.spawn((
+                                Text::new(scene.heading.clone()),
+                                TextFont {
+                                    font_size: FONT_HEAD,
+                                    ..default()
+                                },
+                                TextColor(INK),
+                            ));
                         }
-                        if !scene.choices.is_empty() {
-                            spawn_choice_row(panel, &scene.choices);
+                        if !scene.prompt.is_empty() {
+                            spawn_prompt_line(main, &scene.prompt);
                         }
-                        // The zone's affordances. A control the scene marks disabled is drawn inert.
-                        panel
-                            .spawn(Node {
-                                flex_direction: FlexDirection::Row,
-                                justify_content: JustifyContent::Center,
-                                column_gap: Val::Px(10.0),
-                                padding: UiRect::vertical(Val::Px(6.0)),
+                        // The body is the hero/foe tiles - PRIORITY 1, never clipped. It takes its natural height
+                        // and does NOT shrink (`flex-shrink: 0`); the log below is the region that yields, so the
+                        // rearguard row can never be squeezed out by a long log the way it was when the body
+                        // carried the shrink.
+                        main.spawn((
+                            SceneRegion("body"),
+                            Node {
+                                width: Val::Percent(100.0),
+                                flex_grow: 0.0,
+                                flex_shrink: 0.0,
+                                flex_direction: FlexDirection::Column,
+                                align_items: AlignItems::Center,
+                                justify_content: JustifyContent::FlexStart,
+                                row_gap: Val::Px(8.0),
                                 ..default()
-                            })
-                            .with_children(|row| {
-                                // **Back** - rewind one move. It sits with the scene's own controls but is the
-                                // renderer's, not the game's: the board is the whole state, so stepping back is
-                                // just restoring the previous board, and nothing here needs to know what the move
-                                // meant. Keep pressing and you walk back out of the fight entirely, onto the
-                                // location you opened it from.
-                                if can_undo {
-                                    spawn_nav_card(row, (UndoControl, Pinned), "Back");
-                                }
-                                for (i, label) in affordances.iter().enumerate() {
-                                    if scene.disabled_controls.contains(&i) {
-                                        spawn_disabled_nav(row, label);
-                                    } else if i == 0 {
-                                        // The primary control (Commit, or "leave" once the fight is decided)
-                                        // wears the ring when it is what we are waiting on: it is only enabled
-                                        // here when no hero still owes an order, so "commit" is then the one
-                                        // click that advances - the same invitation a live tile carries.
-                                        spawn_nav_card(
-                                            row,
-                                            (AffordanceControl(i), Pinned, PendingPulse),
-                                            label,
-                                        );
-                                    } else {
-                                        spawn_nav_card(row, (AffordanceControl(i), Pinned), label);
-                                    }
-                                }
-                            });
-                    });
-                });
-            });
+                            },
+                        ))
+                        .with_children(|mid| match &scene.body {
+                            SceneBody::Rows(rows) => draw_scene_rows(mid, rows),
+                            SceneBody::Lanes(lanes) => draw_scene_lanes(mid, lanes),
+                        });
 
-            // BOTTOM: the combat log, full width, under everything (the "D" the ABC block sits on). This is
-            // the PRESSURE VALVE - PRIORITY 3, the only region that yields. It takes all the space the block
-            // above did not (`flex-grow: 1`), and clips its OWN overflow (`min-height: 0` + clip) so a long
-            // log can never push the block. It is **bottom-anchored** (`justify-content: FlexEnd`), so what
-            // stays visible is the NEWEST lines - the oldest scroll off the top, not the latest off the
-            // bottom. The whole log always survives in the post-fight record cards.
-            if !scene.log.is_empty() {
-                root.spawn((
-                    Node {
-                        width: Val::Percent(100.0),
-                        flex_grow: 1.0,
-                        flex_shrink: 1.0,
-                        min_height: Val::Px(0.0),
-                        flex_direction: FlexDirection::Column,
-                        align_items: AlignItems::Stretch,
-                        justify_content: JustifyContent::FlexEnd,
-                        overflow: Overflow::clip(),
-                        // Same inset from the bottom + sides as the sidebar has from the top-left: one margin
-                        // constant, every screen edge the same gap. (Top is 0 - the block above provides it.)
-                        padding: UiRect {
-                            left: SCREEN_MARGIN,
-                            right: SCREEN_MARGIN,
-                            top: Val::ZERO,
-                            bottom: SCREEN_MARGIN,
-                        },
-                        ..default()
-                    },
-                    // The valve container never eats a click either (see spawn_log_panel): if it stretches up
-                    // under the decision strip, clicks pass through to the action cards behind it.
-                    Pickable::IGNORE,
-                ))
-                .with_children(|bar| {
-                    spawn_log_panel(bar, &scene.log_title, &scene.log);
-                });
-            }
+                        // **The decision, then the controls**, under the board. The log that these are *about* now
+                        // stands in the sidebar (left), read alongside the board rather than below the choices; the
+                        // controls sit with the choices because Commit is the last step of the same thought.
+                        main.spawn((
+                            SceneRegion("decision"),
+                            Node {
+                                width: Val::Percent(100.0),
+                                flex_shrink: 0.0,
+                                flex_direction: FlexDirection::Column,
+                                align_items: AlignItems::Center,
+                                row_gap: Val::Px(8.0),
+                                ..default()
+                            },
+                        ))
+                        .with_children(|panel| {
+                            // The log now lives in the sidebar (left); here remain the decision and its controls.
+                            // The decision is drawn as tracked card tiles (they ring, they anchor arrows, they tap
+                            // through `tap_intention`); the older button-rail `choices` path stays for any game
+                            // that still uses it, but the arena speaks in `actions` now.
+                            if !scene.actions.is_empty() {
+                                spawn_action_strip(panel, &scene.actions);
+                            }
+                            if !scene.choices.is_empty() {
+                                spawn_choice_row(panel, &scene.choices);
+                            }
+                            // The zone's affordances. A control the scene marks disabled is drawn inert.
+                            panel
+                                .spawn(Node {
+                                    flex_direction: FlexDirection::Row,
+                                    justify_content: JustifyContent::Center,
+                                    column_gap: Val::Px(10.0),
+                                    padding: UiRect::vertical(Val::Px(6.0)),
+                                    ..default()
+                                })
+                                .with_children(|row| {
+                                    // **Back** - rewind one move. It sits with the scene's own controls but is the
+                                    // renderer's, not the game's: the board is the whole state, so stepping back is
+                                    // just restoring the previous board, and nothing here needs to know what the move
+                                    // meant. Keep pressing and you walk back out of the fight entirely, onto the
+                                    // location you opened it from.
+                                    if can_undo {
+                                        spawn_nav_card(row, (UndoControl, Pinned), "Back");
+                                    }
+                                    for (i, label) in affordances.iter().enumerate() {
+                                        if scene.disabled_controls.contains(&i) {
+                                            spawn_disabled_nav(row, label);
+                                        } else if i == 0 {
+                                            // The primary control (Commit, or "leave" once the fight is decided)
+                                            // wears the ring when it is what we are waiting on: it is only enabled
+                                            // here when no hero still owes an order, so "commit" is then the one
+                                            // click that advances - the same invitation a live tile carries.
+                                            spawn_nav_card(
+                                                row,
+                                                (AffordanceControl(i), Pinned, PendingPulse),
+                                                label,
+                                            );
+                                        } else {
+                                            spawn_nav_card(
+                                                row,
+                                                (AffordanceControl(i), Pinned),
+                                                label,
+                                            );
+                                        }
+                                    }
+                                });
+                        });
+                    });
+                // The combat log, in the RIGHT column beneath the board block - the PRESSURE VALVE (the only
+                // region that yields). `flex-grow: 1` takes all the leftover HEIGHT of the right column, and
+                // `min-height: 0` + clip lets a long log clip its own overflow instead of pushing the board.
+                // Bottom-anchored (`justify-content: FlexEnd`) so the NEWEST lines stay visible; the whole log
+                // survives in the post-fight record cards. It now sits BESIDE the sidebar, so the wide-open
+                // right region is all its own - a tall sidebar no longer squeezes it into a bottom strip.
+                if !scene.log.is_empty() {
+                    right
+                        .spawn((
+                            Node {
+                                width: Val::Percent(100.0),
+                                flex_grow: 1.0,
+                                flex_shrink: 1.0,
+                                min_height: Val::Px(0.0),
+                                flex_direction: FlexDirection::Column,
+                                align_items: AlignItems::Stretch,
+                                justify_content: JustifyContent::FlexEnd,
+                                overflow: Overflow::clip(),
+                                // Inset matching the board block above: left aligns with the board, and the
+                                // bottom/right sit one margin off the screen edges. (Top is 0 - the board block
+                                // provides that gap.)
+                                padding: UiRect {
+                                    left: SCREEN_MARGIN,
+                                    right: SCREEN_MARGIN,
+                                    top: Val::ZERO,
+                                    bottom: SCREEN_MARGIN,
+                                },
+                                ..default()
+                            },
+                            // The valve container never eats a click either (see spawn_log_panel): if it
+                            // stretches up under the decision strip, clicks pass through to the cards behind it.
+                            Pickable::IGNORE,
+                        ))
+                        .with_children(|bar| {
+                            spawn_log_panel(bar, &scene.log_title, &scene.log);
+                        });
+                }
+            });
         });
 }
 

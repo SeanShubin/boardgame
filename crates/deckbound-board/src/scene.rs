@@ -99,9 +99,10 @@ pub fn scene(board: &Board, _focus: PileId) -> Option<Scene> {
         log_title,
         log,
         legend: stat_legend(),
-        // No reference card: the step is described under the heading now (`step_desc`), so the whole-schedule
-        // card is gone. (`targets::schedule_card` survives for the reference doc and its test.)
-        reference: Vec::new(),
+        // The standing rules reference: the whole round at a glance (who reaches whom each step, and the
+        // cross-cutting reach/tempo rules), so a player can plan forward and not only react to the lit step.
+        // The per-step prompt (`step_desc`) still names the immediate move; this is the schedule behind it.
+        reference: crate::targets::schedule_card(),
         disabled_controls,
     })
 }
@@ -124,8 +125,8 @@ fn stat_legend() -> Vec<String> {
 
 /// Two progress tracks. **Step**: the eight steps of the round in schedule order, the current one lit, then
 /// the Reset that closes every unfinished wound. **Interaction**: the four minor steps every single strike
-/// runs - `Target` (choosing the WHOM), `Catch` (the reach), `Strike` (the pour), `Resolve` (automatic) -
-/// with the live beat lit so the anatomy of the strike you are building is visible where you fight.
+/// runs - `Target` (choosing the WHOM), `Catch` (the reach), `Strike` (the extra blows), `Resolve`
+/// (automatic) - with the live beat lit so the anatomy of the strike you are building is visible where you fight.
 fn build_tracks(w: &arena::Wave) -> Vec<Track> {
     let mut items: Vec<TrackItem> = STEPS
         .into_iter()
@@ -168,28 +169,36 @@ fn build_tracks(w: &arena::Wave) -> Vec<Track> {
     vec![phase, interaction]
 }
 
-/// The step's directive: **one imperative** naming the move to make, no rules footnotes. The step is already
-/// named by the locator this feeds into (`Step k/8 - <name>: ...`), so the text never repeats the name, and
-/// the caveats (costs, dodge windows, what bars what) are left to the log's resolution math - the prompt says
-/// what to do, not how it scores. An outcome clause survives only where the outcome IS the point (Crossing
-/// lands an outrider; Advance names the exposed target).
+/// The step's directive: the move to make **plus its one binding constraint or cost** - the single rule that
+/// decides whether the move is worth it (a bar, a price, a one-way, an evade). Stated matter-of-factly: what
+/// is legal and what it costs, never how to play it - the player devises the strategy. The step is already
+/// named by the locator this feeds into (`Step k/8 - <name>: ...`), so the text never repeats the name. The
+/// standing reference card carries the whole schedule; this carries the one fact that bites at THIS step.
 fn prompt_for(step: Step) -> &'static str {
     match step {
         Step::Havoc => {
-            "Strike with the outriders already behind their line - hit either tier they are tangled with."
+            "Strike with the outriders already behind their line - hit either tier they are tangled with; their hosts strike back the same way."
         }
-        Step::Withdraw => "Pull your forward outriders home, or leave them out to keep striking.",
+        Step::Withdraw => {
+            "Pull your forward outriders home (free), or leave them loose to keep striking - standing costs nothing now but keeps them exposed."
+        }
         Step::Skirmish => {
-            "Strike the enemies about to cross; hold any of yours you mean to send across."
+            "Strike the enemies about to cross; any vanguard of yours that strikes here cannot cross this round."
         }
         Step::Cross => {
-            "Send a vanguard that held its swing through the gap - it lands behind their line as an outrider."
+            "Send a vanguard that held its swing through the gap - only one that did not strike this round may cross; it lands as an outrider and takes the volley next."
         }
-        Step::Volley => "Fire on any enemy outrider now in your zone.",
-        Step::Raid => "Strike their back line with your fresh arrivals.",
-        Step::Assault => "Swing with everyone who saved their tempo.",
+        Step::Volley => {
+            "Fire on any enemy outrider in your zone - one shot each, and it cannot fire back."
+        }
+        Step::Raid => {
+            "Strike their back line with your fresh arrivals - one blow, which the target may dodge, spending the tempo it would fire with."
+        }
+        Step::Assault => {
+            "Swing with every body that saved its tempo - rearguard fire and every vanguard that held back."
+        }
         Step::Advance => {
-            "If their front has fallen, push through to the rearguard it was screening."
+            "If a front has fallen, push through to the rearguard it was screening - reachable only while it has no living vanguard."
         }
     }
 }

@@ -147,27 +147,36 @@ pub fn table_md() -> String {
     mdtable::pad_tables(&md)
 }
 
-/// **The schedule, as a card for the sidebar** - the eight steps and who reaches whom, compact enough for
-/// 213px. The full table does not fit; mid-fight you need the one thing the schedule actually decides, which
-/// is *when*.
+/// **The standing rules reference, as a sidebar card** - the whole round at a glance so a player can plan
+/// forward, not only react to the lit step. The panel convention (`spawn_legend_panel`): un-indented lines
+/// are section headers, leading-space lines are entries. Each step line is `who -> whom` plus the one binding
+/// fact that changes the plan (a bar, a cost, a one-way, an evade). Compact enough for the sidebar; the full
+/// join lives in the generated `combat-targets.md`.
 pub fn schedule_card() -> Vec<String> {
     let mut out = vec!["The round - eight steps".to_string()];
+    // One line per step, in schedule order: the reach, and the single rule that decides whether the move is
+    // worth it. No strategy - just what is legal and what it costs.
     let lines = [
-        "O <-> hosts, point-blank",
-        "O may rejoin its line",
-        "V -> V (bars your crossing)",
-        "V may cross (if it held)",
-        "R -> O, one-way",
-        "O -> R, arrivals only",
-        "RV -> V, all firepower",
-        "RV -> exposed R",
+        "O<->hosts, point-blank, mutual",
+        "O may rejoin its line (free)",
+        "V->V; a strike here bars your cross",
+        "V may cross only if it held its swing",
+        "R->O, one-way, opening blow only",
+        "O->R, this round's arrivals; evadable",
+        "RV->V, every body that held its tempo",
+        "RV-> a rearguard whose front just fell",
     ];
     for (s, line) in STEPS.into_iter().zip(lines) {
         let (k, name) = step_coord(s);
-        out.push(format!("{k} {name}: {line}"));
+        out.push(format!(" {k} {name}: {line}"));
     }
-    out.push(String::new());
-    out.push("Minor steps: target, catch, strike, resolve".to_string());
+    // The cross-cutting rules a step line cannot carry: what answers back, and the one shared pool.
+    out.push("Reach and tempo".to_string());
+    out.push(" melee answers back; ranged is one-way".to_string());
+    out.push(" tempo is one pool: strike or dodge".to_string());
+    out.push(" refills to Cadence each round; wounds close".to_string());
+    out.push("Every strike".to_string());
+    out.push(" target, catch (reach), strike (+blows), resolve".to_string());
     out
 }
 
