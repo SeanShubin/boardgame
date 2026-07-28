@@ -112,9 +112,11 @@ const LOCATIONS: [&str; 9] = [
 
 /// A short summary for each of the round's eight phases, **aligned to [`STEPS`]** order. The phase NAMES and
 /// ORDER come from the engine (`step_game::STEPS` / `step_coord`), so the Rules deck can only ever name a
-/// phase the machine actually runs; only this prose lives here. Each string is **one rendered line**, kept
-/// short enough to fit a Medium card's `MEDIUM_W` width (no wrap - a long line would clip), so a multi-line
-/// summary is a slice of short lines, not one long line.
+/// phase the machine actually runs; only this prose lives here. Each string is **one line as authored**;
+/// the Medium card renders detail lines with **word-wrap and grows its height to fit** (see
+/// `spawn_card_medium`), so a long line stays readable but wraps untidily - keep each line short (roughly a
+/// Medium card's width) and let a multi-line summary be a slice of short lines. Adding lines just makes the
+/// card taller; it never clips.
 const PHASE_BLURB: [&[&str]; 8] = [
     // 1 Havoc
     &[
@@ -167,31 +169,38 @@ const PHASE_BLURB: [&[&str]; 8] = [
 /// these as a drill-in sub-deck so the round schedule and the per-strike resolution are both explained. Each
 /// detail string is one rendered line (see [`PHASE_BLURB`]), kept short to fit the card width.
 const INTERACTION: [(&str, &[&str]); 4] = [
-    ("Target", &["Name whom you strike,", "or pass."]),
+    (
+        "Target",
+        &["Name whom you strike,", "or pass to keep your tempo."],
+    ),
     (
         "Catch",
         &[
-            "Flip tempo at Finesse to",
-            "reach; the target may slip.",
-            "More cards price out the",
-            "slip, never add damage.",
+            "Spend tempo to reach the",
+            "target. Reach = tempo x",
+            "Finesse - the same for your",
+            "catch and their dodge.",
+            "They dodge only with MORE",
+            "reach; a tie lands the hit.",
         ],
     ),
     (
         "Strike",
         &[
-            "The free opening blow,",
-            "plus one per tempo,",
-            "at Might each.",
+            "The catch's reach lands the",
+            "first blow. Each extra blow",
+            "costs 1 more tempo.",
+            "Every blow deals Might.",
         ],
     ),
     (
         "Resolve",
         &[
-            "Damage applies: Health",
-            "flips one card per Grit.",
-            "The pool then wipes.",
-            "An emptied body is down.",
+            "Each Health card soaks Grit",
+            "damage, then flips.",
+            "Any excess is discarded.",
+            "Empty every card and the",
+            "body is down.",
         ],
     ),
 ];
@@ -212,10 +221,10 @@ const RANKS: [(&str, &[&str]); 3] = [
     (
         "Outrider",
         &[
-            "Loose inside the enemy,",
-            "having crossed in.",
+            "Crossed into the enemy to",
+            "raid their rearguard.",
             "Hits hard, but is exposed",
-            "to their whole line.",
+            "to their whole line at once.",
         ],
     ),
     (
@@ -223,8 +232,8 @@ const RANKS: [(&str, &[&str]); 3] = [
         &[
             "Back rank, ranged fire.",
             "Screened while its own",
-            "vanguard stands; its",
-            "shots go unanswered.",
+            "vanguard stands; its shots",
+            "cannot be struck back at.",
         ],
     ),
 ];
@@ -253,10 +262,10 @@ const STAT_RULES: [(&str, &[&str]); 5] = [
     (
         "Grit",
         &[
-            "How tough each Health",
-            "card is. Damage piles;",
-            "at your Grit, one turns.",
-            "Unfinished piles reset.",
+            "How tough each Health card",
+            "is. Damage piles up; each",
+            "Grit banked flips one card,",
+            "and the rest is discarded.",
         ],
     ),
     ("Cadence", &["How many Tempo cards", "you get each round."]),
